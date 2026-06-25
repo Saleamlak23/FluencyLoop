@@ -1,0 +1,143 @@
+/* frontend/src/globals.css */
+
+@import url("https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Base resets ── */
+@layer base {
+  *, *::before, *::after {
+    box-sizing: border-box;
+  }
+
+  html {
+    scroll-behavior: smooth;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    @apply bg-background text-text-primary font-body;
+    min-height: 100vh;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-display;
+  }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    @apply bg-surface;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-border rounded-pill;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-text-subtle;
+  }
+
+  /* Focus ring */
+  :focus-visible {
+    outline: 2px solid #6366F1;
+    outline-offset: 3px;
+    border-radius: 4px;
+  }
+
+  /* Reduced motion */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+/* ── Component layer ── */
+@layer components {
+
+  /* Card */
+  .fl-card {
+    @apply bg-card rounded-card shadow-card border border-border/60;
+  }
+
+  /* Section container */
+  .fl-container {
+    @apply max-w-5xl mx-auto px-4 sm:px-6 lg:px-8;
+  }
+
+  /* Transcript word badges */
+  .word-correct {
+    @apply text-correct border-b-2 border-correct/60 pb-0.5 mx-0.5;
+  }
+  .word-caution {
+    @apply text-caution border-b-2 border-caution/60 pb-0.5 mx-0.5;
+  }
+  .word-error {
+    @apply text-error border-b-2 border-error/60 pb-0.5 mx-0.5;
+  }
+
+  /* Pill label */
+  .fl-pill {
+    @apply inline-flex items-center gap-1.5 px-3 py-1 rounded-pill text-xs font-medium;
+  }
+
+  /* Session step indicator */
+  .step-dot {
+    @apply w-2 h-2 rounded-full transition-all duration-300;
+  }
+  .step-dot-active {
+    @apply bg-primary w-4;
+  }
+  .step-dot-done {
+    @apply bg-primary/40;
+  }
+  .step-dot-pending {
+    @apply bg-border;
+  }
+
+  /* Record button ring animation */
+  .record-ring {
+    @apply absolute inset-0 rounded-full border-2 border-error/60 animate-ping;
+  }
+}
+
+/* ── Utility layer ── */
+@layer utilities {
+  .text-gradient-primary {
+    background: linear-gradient(135deg, #6366F1, #818CF8);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .text-gradient-accent {
+    background: linear-gradient(135deg, #F59E0B, #FCD34D);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .bg-glow-primary {
+    background: radial-gradient(ellipse at top, rgba(99,102,241,0.12) 0%, transparent 70%);
+  }
+
+  .bg-glow-accent {
+    background: radial-gradient(ellipse at center, rgba(245,158,11,0.10) 0%, transparent 60%);
+  }
+
+  .border-subtle {
+    border-color: rgba(255,255,255,0.06);
+  }
+
+  /* Smooth height transitions for collapsible panels */
+  .collapsible {
+    overflow: hidden;
+    transition: max-height 0.35s ease, opacity 0.3s ease;
+  }
+}
