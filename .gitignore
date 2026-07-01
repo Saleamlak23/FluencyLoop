@@ -145,3 +145,6 @@ vite.config.ts.timestamp-*
 # postman folder and file
 postman/
 .postman
+
+# dummy data
+Frontend development with dummy data and API integration - Claude_files/
