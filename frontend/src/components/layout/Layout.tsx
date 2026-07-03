@@ -1,7 +1,7 @@
 // src/components/layout/Layout.tsx
 
 import { Outlet, NavLink, useLocation } from "react-router-dom";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 interface NavItem {
   path: string;
@@ -39,6 +39,13 @@ const NAV_ITEMS: NavItem[] = [
 
 export default function Layout() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [progress, setProgress] = useState<{ streak?: number; sessions_completed?: number } | null>(null);
+  useEffect(() => {
+    fetch(`${import.meta.env.VITE_API_URL}/api/user/progress`)
+      .then((r) => r.json())
+      .then(setProgress)
+      .catch((e) => console.error("Failed to fetch progress", e));
+  }, []);
   const location = useLocation();
   const isLanding = location.pathname === "/";
 
@@ -87,9 +94,9 @@ export default function Layout() {
             {/* Streak badge */}
             {!isLanding && (
               <div className="hidden sm:flex items-center gap-1.5 fl-pill bg-accent/10 text-accent">
-                <span>🔥</span>
-                <span>4-day streak</span>
-              </div>
+                  <span>🔥</span>
+                  <span>{progress?.streak ?? 0}-day streak</span>
+                </div>
             )}
 
             {/* Mobile menu toggle */}
@@ -157,7 +164,7 @@ export default function Layout() {
               {/* Streak in mobile menu */}
               <div className="mt-2 pt-3 border-t border-border/60 flex items-center gap-2 px-3 text-sm text-text-muted">
                 <span>🔥</span>
-                <span>4-day streak — keep it going!</span>
+                <span>{progress?.streak ?? 0}-day streak — keep it going!</span>
               </div>
             </nav>
           </div>
@@ -200,11 +207,11 @@ export default function Layout() {
               </div>
               <div className="flex items-center gap-2 mb-1">
                 <span className="text-sm">🔥</span>
-                <span className="text-sm text-text-muted">4-day streak</span>
+                <span className="text-sm text-text-muted">{progress?.streak ?? 0}-day streak</span>
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-sm">✅</span>
-                <span className="text-sm text-text-muted">12 sessions done</span>
+                <span className="text-sm text-text-muted">{progress?.sessions_completed ?? 0} sessions done</span>
               </div>
             </div>
           </aside>

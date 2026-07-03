@@ -11,7 +11,13 @@ import {
   SCENARIOS,
   WRITING_PROMPTS,
 } from "../lib/dummy-data";
-import type { SessionStep, ConversationTurn, WarmUpQuestion } from "../lib/types";
+import type {
+  SessionStep,
+  WarmUpQuestion,
+  SpeakingResult,
+  WritingFeedback,
+  SessionSummaryData,
+} from "../lib/types";
 import Badge from "../components/ui/Badge";
 import Button from "../components/ui/Button";
 import ProgressBar from "../components/ui/ProgressBar";
@@ -165,7 +171,7 @@ function WarmUpStep({
 
 // ── Step 2: Speaking mini-drill ───────────────────────────────────────────
 
-function SpeakingStep({ onContinue }: { onContinue: () => void }) {
+function SpeakingStep({ onContinue }: { onContinue: (result: SpeakingResult) => void }) {
   const scenario   = SCENARIOS[0];
   // Only show first 4 turns (2 exchanges) in the practice flow
   const turns      = DUMMY_CONVERSATION.slice(0, 4);
@@ -178,17 +184,25 @@ function SpeakingStep({ onContinue }: { onContinue: () => void }) {
   const isDone       = turnIndex >= turns.length - 1;
   const progress     = Math.round(((turnIndex + 1) / turns.length) * 100);
 
-  function handleRecord() {
+  // Delegate real recording to audio-recorder helper
+  async function handleRecord() {
+    const audioRecorder = await import("../lib/audio-recorder").then((mod) => mod.default);
     if (!isRecording) {
-      // Real: start MediaRecorder
-      // API: POST /api/speaking/transcribe — body: FormData { audio, scenarioId, turnIndex }
       setIsRecording(true);
-      setTimeout(() => {
-        setIsRecording(false);
-        setTurnIndex((prev) => Math.min(prev + 1, turns.length - 1));
-      }, 1500);
-    } else {
-      setIsRecording(false);
+      await audioRecorder.start();
+      return;
+    }
+    setIsRecording(false);
+    try {
+      const blob = await audioRecorder.stop();
+      const form = new FormData();
+      form.append("audio", blob, "turn.webm");
+      form.append("scenarioId", scenario.id);
+      form.append("turnIndex", String(turnIndex));
+      await fetch(`${import.meta.env.VITE_API_URL}/api/speech/transcribe`, { method: "POST", body: form });
+      setTurnIndex((prev) => Math.min(prev + 1, turns.length - 1));
+    } catch (e) {
+      console.error(e);
       setTurnIndex((prev) => Math.min(prev + 1, turns.length - 1));
     }
   }
@@ -286,12 +300,7 @@ function SpeakingStep({ onContinue }: { onContinue: () => void }) {
                 <p className="text-xs text-text-subtle">
                   {isRecording ? "Recording… tap to stop" : "Tap to speak"}
                 </p>
-                <button
-                  onClick={handleRecord}
-                  className="text-xs text-primary-light underline underline-offset-2 opacity-60 hover:opacity-100"
-                >
-                  Skip (dummy response)
-                </button>
+                {/* Skip removed — backend will provide real response */}
               </div>
             ) : (
               <div className="flex flex-col items-center gap-2">
@@ -313,7 +322,7 @@ function SpeakingStep({ onContinue }: { onContinue: () => void }) {
             <p className="text-sm text-text-muted mb-4">
               🎉 Nice work — moving on to writing!
             </p>
-            <Button onClick={onContinue} size="lg" className="w-full justify-center">
+            <Button onClick={() => onContinue(DUMMY_SPEAKING_RESULT)} size="lg" className="w-full justify-center">
               Continue to Writing →
             </Button>
           </div>
@@ -325,11 +334,12 @@ function SpeakingStep({ onContinue }: { onContinue: () => void }) {
 
 // ── Step 3: Writing mini-drill ────────────────────────────────────────────
 
-function WritingStep({ onContinue }: { onContinue: () => void }) {
+function WritingStep({ onContinue }: { onContinue: (result: WritingFeedback) => void }) {
   const prompt    = WRITING_PROMPTS[0];
   const [text, setText]     = useState("");
   const [loading, setLoading] = useState(false);
   const [done, setDone]     = useState(false);
+  const [writingResult, setWritingResult] = useState<WritingFeedback | null>(null);
 
   const wordCount  = useMemo(() => text.trim().split(/\s+/).filter(Boolean).length, [text]);
   const sentences  = useMemo(() => {
@@ -339,12 +349,26 @@ function WritingStep({ onContinue }: { onContinue: () => void }) {
   const isReady = sentences >= prompt.minSentences && sentences <= prompt.maxSentences;
 
   function handleSubmit() {
-    setLoading(true);
-    // API: POST /api/writing/evaluate — body: { promptId: prompt.id, text }
-    setTimeout(() => {
-      setLoading(false);
-      setDone(true);
-    }, 1800);
+    (async () => {
+      setLoading(true);
+      try {
+        const res = await fetch(`${import.meta.env.VITE_API_URL}/api/writing/evaluate`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ promptId: prompt.id, text }),
+        });
+        if (!res.ok) throw new Error(await res.text());
+        const data = await res.json();
+        setWritingResult(data);
+      } catch (e) {
+        console.error("Writing evaluate error", e);
+        // fallback to dummy
+        setWritingResult(DUMMY_WRITING_FEEDBACK);
+      } finally {
+        setLoading(false);
+        setDone(true);
+      }
+    })();
   }
 
   return (
@@ -410,12 +434,12 @@ function WritingStep({ onContinue }: { onContinue: () => void }) {
               </p>
               <div className="flex items-center gap-3 mb-4">
                 <span className="font-display font-bold text-4xl text-caution">
-                  {DUMMY_WRITING_FEEDBACK.overallScore}/5
+                  {(writingResult ?? DUMMY_WRITING_FEEDBACK).overallScore}/5
                 </span>
                 <div>
                   <p className="text-sm font-medium text-text-primary">Developing</p>
                   <p className="text-xs text-text-muted">
-                    {DUMMY_WRITING_FEEDBACK.errors.length} corrections found
+                    {(writingResult ?? DUMMY_WRITING_FEEDBACK).errors.length} corrections found
                   </p>
                 </div>
               </div>
@@ -434,7 +458,9 @@ function WritingStep({ onContinue }: { onContinue: () => void }) {
             </p>
 
             <Button
-              onClick={onContinue}
+              onClick={() => {
+                onContinue(writingResult ?? DUMMY_WRITING_FEEDBACK);
+              }}
               size="lg"
               className="w-full justify-center"
               rightIcon={<span>→</span>}
@@ -450,10 +476,10 @@ function WritingStep({ onContinue }: { onContinue: () => void }) {
 
 // ── Step 4: Session summary ───────────────────────────────────────────────
 
-function SummaryStep({ onRestart }: { onRestart: () => void }) {
-  const summary = DUMMY_SESSION_SUMMARY;
-  const speaking = summary.speakingResult;
-  const writing  = summary.writingFeedback;
+function SummaryStep({ summary, onRestart }: { summary: SessionSummaryData; onRestart: () => void }) {
+  const using = summary;
+  const speaking = using.speakingResult;
+  const writing  = using.writingFeedback;
 
   const levelMessages = {
     stay:      "You're building great habits — keep this level and master it.",
@@ -596,11 +622,11 @@ function SummaryStep({ onRestart }: { onRestart: () => void }) {
 
 export default function PracticePage() {
   const [step, setStep] = useState<SessionStep>("warmup");
+  const [sessionSummary, setSessionSummary] = useState<SessionSummaryData | null>(null);
+  const [speakingResult, setSpeakingResult] = useState<SpeakingResult | null>(null);
 
-  // Pick a random warm-up question
-  const question = useMemo(
-    () => WARMUP_QUESTIONS[Math.floor(Math.random() * WARMUP_QUESTIONS.length)],
-    []
+  const [question] = useState<WarmUpQuestion>(() =>
+    WARMUP_QUESTIONS[Math.floor(Math.random() * WARMUP_QUESTIONS.length)]
   );
 
   function handleRestart() {
@@ -619,17 +645,36 @@ export default function PracticePage() {
       {step === "warmup" && (
         <WarmUpStep
           question={question}
-          onContinue={() => setStep("speaking")}
+          onContinue={() => {
+            setStep("speaking");
+          }}
         />
       )}
       {step === "speaking" && (
-        <SpeakingStep onContinue={() => setStep("writing")} />
+        <SpeakingStep onContinue={(result) => {
+          setSpeakingResult(result);
+          setStep("writing");
+        }} />
       )}
       {step === "writing" && (
-        <WritingStep onContinue={() => setStep("summary")} />
+        <WritingStep onContinue={(result) => {
+          const summary: SessionSummaryData = {
+            streak: 0,
+            sessionsCompleted: 0,
+            speakingResult: speakingResult ?? DUMMY_SPEAKING_RESULT,
+            writingFeedback: result,
+            topInsights: [
+              ...(speakingResult?.topInsights ?? DUMMY_SPEAKING_RESULT.topInsights),
+              ...result.topInsights,
+            ],
+            levelSuggestion: "stay",
+          };
+          setSessionSummary(summary);
+          setStep("summary");
+        }} />
       )}
       {step === "summary" && (
-        <SummaryStep onRestart={handleRestart} />
+        <SummaryStep summary={sessionSummary ?? DUMMY_SESSION_SUMMARY} onRestart={handleRestart} />
       )}
     </div>
   );

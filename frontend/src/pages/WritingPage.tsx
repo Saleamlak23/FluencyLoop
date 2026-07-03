@@ -444,8 +444,17 @@ function FeedbackPanel({
         <Button onClick={onRestart} size="lg">
           Try another prompt →
         </Button>
-        <Button variant="secondary" size="lg">
-          {/* API: POST /api/session/save */}
+        <Button variant="secondary" size="lg" onClick={async () => {
+          try {
+            await fetch(`${import.meta.env.VITE_API_URL}/api/session/save`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ writingFeedback: feedback }),
+            });
+          } catch (e) {
+            console.error("Save session failed", e);
+          }
+        }}>
           Save to my progress
         </Button>
       </div>
@@ -469,14 +478,26 @@ export default function WritingPage() {
   }
 
   function handleSubmit(text: string) {
-    setLoading(true);
-    // Real: POST /api/writing/evaluate — body: { promptId: prompt.id, text }
-    // Response: WritingFeedback
-    setTimeout(() => {
-      setFeedback(DUMMY_WRITING_FEEDBACK);
-      setLoading(false);
-      setView("feedback");
-    }, 1800);
+    (async () => {
+      setLoading(true);
+      try {
+        const res = await fetch(`${import.meta.env.VITE_API_URL}/api/writing/evaluate`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ promptId: prompt!.id, text }),
+        });
+        if (!res.ok) throw new Error(await res.text());
+        const data = await res.json();
+        setFeedback(data);
+        setView("feedback");
+      } catch (err) {
+        console.error("Writing evaluate error", err);
+        setFeedback(DUMMY_WRITING_FEEDBACK);
+        setView("feedback");
+      } finally {
+        setLoading(false);
+      }
+    })();
   }
 
   function handleRestart() {

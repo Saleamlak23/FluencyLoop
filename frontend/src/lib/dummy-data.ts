@@ -17,6 +17,7 @@ export const SCENARIOS: Scenario[] = [
     id: "ordering-coffee",
     emoji: "☕",
     title: "Ordering Coffee",
+    role: "a barista at a busy coffee shop",
     description:
       "You've just walked into a London coffee shop. Order your drink and handle any questions the barista has.",
     level: "everyday",
@@ -26,6 +27,7 @@ export const SCENARIOS: Scenario[] = [
     id: "asking-directions",
     emoji: "🗺️",
     title: "Asking for Directions",
+    role: "a helpful local on the street",
     description:
       "You're lost in a new city. Stop someone on the street and ask how to get to the nearest train station.",
     level: "everyday",
@@ -35,6 +37,7 @@ export const SCENARIOS: Scenario[] = [
     id: "job-interview",
     emoji: "💼",
     title: "Job Interview Small Talk",
+    role: "a receptionist at a modern office",
     description:
       "You've arrived early for a job interview. The receptionist starts a friendly conversation while you wait.",
     level: "free",

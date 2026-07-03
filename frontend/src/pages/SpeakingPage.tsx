@@ -1,7 +1,8 @@
 // src/pages/SpeakingPage.tsx
 
 import { useState } from "react";
-import { SCENARIOS, DUMMY_CONVERSATION, DUMMY_SPEAKING_RESULT } from "../lib/dummy-data";
+import { SCENARIOS, DUMMY_SPEAKING_RESULT } from "../lib/dummy-data";
+import audioRecorder from "../lib/audio-recorder";
 import type { Scenario, ConversationTurn, SpeakingResult } from "../lib/types";
 import Badge from "../components/ui/Badge";
 import Button from "../components/ui/Button";
@@ -125,6 +126,7 @@ function ConversationView({
   turns,
   currentTurnIndex,
   isRecording,
+  isProcessing,
   onRecord,
   onFinish,
 }: {
@@ -132,6 +134,7 @@ function ConversationView({
   turns: ConversationTurn[];
   currentTurnIndex: number;
   isRecording: boolean;
+  isProcessing: boolean;
   onRecord: () => void;
   onFinish: () => void;
 }) {
@@ -139,7 +142,8 @@ function ConversationView({
   const visibleTurns = turns.slice(0, currentTurnIndex + 1);
   const lastTurn = visibleTurns[visibleTurns.length - 1];
   const isAiTurn = lastTurn?.role === "ai";
-  const isDone = currentTurnIndex >= turns.length - 1;
+  const expectedLastIndex = scenario.totalTurns * 2 - 2;
+  const isDone = currentTurnIndex >= expectedLastIndex;
 
   return (
     <div className="fl-container py-8 animate-fade-in">
@@ -212,7 +216,9 @@ function ConversationView({
         <div className="fl-card p-5 border-primary/20 bg-primary/5 text-center">
           {isAiTurn ? (
             <div className="flex flex-col items-center gap-3">
-              <p className="text-sm text-text-muted">Your turn — press to respond</p>
+              <p className="text-sm text-text-muted">
+                {isProcessing ? "Processing AI response…" : "Your turn — press to respond"}
+              </p>
 
               {/* Record button */}
               <div className="relative w-16 h-16">
@@ -236,14 +242,6 @@ function ConversationView({
                 {isRecording ? "Recording… tap to stop" : "Tap to speak"}
               </p>
 
-              {/* Dummy shortcut for testing without mic */}
-              <button
-                onClick={onRecord}
-                className="text-xs text-primary-light underline underline-offset-2 opacity-60 hover:opacity-100"
-              >
-                {/* API: POST /api/speaking/transcribe */}
-                Skip (use dummy response)
-              </button>
             </div>
           ) : (
             <div className="flex flex-col items-center gap-2">
@@ -411,8 +409,17 @@ function ResultsPanel({
         <Button onClick={onRestart} variant="primary" size="lg">
           Try another scenario →
         </Button>
-        <Button variant="secondary" size="lg">
-          {/* API: POST /api/session/save */}
+        <Button variant="secondary" size="lg" onClick={async () => {
+          try {
+            await fetch(`${import.meta.env.VITE_API_URL}/api/session/save`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ speakingResult: result ?? DUMMY_SPEAKING_RESULT }),
+            });
+          } catch (e) {
+            console.error("Save session failed", e);
+          }
+        }}>
           Save to my progress
         </Button>
       </div>
@@ -427,28 +434,99 @@ type View = "picker" | "conversation" | "results";
 export default function SpeakingPage() {
   const [view, setView]                   = useState<View>("picker");
   const [scenario, setScenario]           = useState<Scenario | null>(null);
+  const [turns, setTurns]                 = useState<ConversationTurn[]>([]);
   const [turnIndex, setTurnIndex]         = useState(0);
   const [isRecording, setIsRecording]     = useState(false);
+  const [isProcessing, setIsProcessing]   = useState(false);
+  const [result, setResult] = useState<SpeakingResult | null>(null);
+
+  function buildInitialAiTurn(scenario: Scenario): ConversationTurn {
+    return {
+      id: `${scenario.id}-ai-start`,
+      role: "ai",
+      text: `Hi there — I'm a ${scenario.role}. ${scenario.description} Please answer naturally, and I'll help you as we go.`,
+      hint: "Speak naturally and use the situation vocabulary.",
+    };
+  }
 
   function handleSelectScenario(s: Scenario) {
     setScenario(s);
+    setTurns([buildInitialAiTurn(s)]);
     setTurnIndex(0);
+    setResult(null);
     setView("conversation");
   }
 
-  function handleRecord() {
+  async function handleRecord() {
     if (!isRecording) {
-      // Real: start MediaRecorder, stream audio
-      // API: POST /api/speaking/transcribe — body: FormData { audio, scenarioId, turnIndex }
       setIsRecording(true);
-      // Dummy: auto-stop after 1.5s and advance turn
-      setTimeout(() => {
-        setIsRecording(false);
-        setTurnIndex((prev) => Math.min(prev + 1, DUMMY_CONVERSATION.length - 1));
-      }, 1500);
-    } else {
-      setIsRecording(false);
-      setTurnIndex((prev) => Math.min(prev + 1, DUMMY_CONVERSATION.length - 1));
+      await audioRecorder.start();
+      return;
+    }
+
+    setIsRecording(false);
+    if (!scenario) return;
+
+    setIsProcessing(true);
+    try {
+      const blob = await audioRecorder.stop();
+      const form = new FormData();
+      form.append("audio", blob, "turn.webm");
+
+      const transcribeRes = await fetch(`${import.meta.env.VITE_API_URL}/api/speech/transcribe`, {
+        method: "POST",
+        body: form,
+      });
+      if (!transcribeRes.ok) throw new Error(await transcribeRes.text());
+      const transcription = await transcribeRes.json();
+      const transcriptText = (transcription.text || "").trim();
+
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/conversation/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          scenario_role: scenario.role,
+          scenario_description: scenario.description,
+          level: scenario.level,
+          history: turns.map((turn) => ({
+            role: turn.role === "ai" ? "assistant" : "user",
+            content: turn.text,
+          })),
+          transcript: transcriptText,
+        }),
+      });
+      if (!response.ok) throw new Error(await response.text());
+
+      const conversationData = await response.json();
+      const userTurn: ConversationTurn = {
+        id: `user-${turns.length + 1}`,
+        role: "user",
+        text: transcriptText || "(No transcript captured)",
+        wordFeedback: conversationData.word_feedback,
+      };
+
+      const aiTurn: ConversationTurn = {
+        id: `ai-${turns.length + 2}`,
+        role: "ai",
+        text: conversationData.character_reply || "",
+        hint: conversationData.next_prompt,
+      };
+
+      setTurns((prev) => {
+        const next = [...prev, userTurn, aiTurn];
+        setTurnIndex(next.length - 1);
+        return next;
+      });
+
+      window.speechSynthesis.cancel();
+      const utt = new SpeechSynthesisUtterance(conversationData.character_reply || "");
+      utt.lang = "en-GB";
+      utt.rate = 0.9;
+      window.speechSynthesis.speak(utt);
+    } catch (e) {
+      console.error("Conversation failed", e);
+    } finally {
+      setIsProcessing(false);
     }
   }
 
@@ -471,9 +549,10 @@ export default function SpeakingPage() {
     return (
       <ConversationView
         scenario={scenario}
-        turns={DUMMY_CONVERSATION}
+        turns={turns}
         currentTurnIndex={turnIndex}
         isRecording={isRecording}
+        isProcessing={isProcessing}
         onRecord={handleRecord}
         onFinish={handleFinish}
       />
@@ -483,7 +562,7 @@ export default function SpeakingPage() {
   if (view === "results") {
     return (
       <ResultsPanel
-        result={DUMMY_SPEAKING_RESULT}
+        result={result ?? DUMMY_SPEAKING_RESULT}
         onRestart={handleRestart}
       />
     );

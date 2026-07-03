@@ -1,11 +1,10 @@
 // src/pages/WordOfTheDayPage.tsx
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { getTodaysWord } from "../lib/dummy-data";
-import type { WordDefinition } from "../lib/types";
+import type { WordDefinition, WordOfTheDay } from "../lib/types";
 import Badge from "../components/ui/Badge";
 import Button from "../components/ui/Button";
-import { WORDS_OF_THE_DAY } from "../lib/dummy-data";
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -227,6 +226,7 @@ function ChallengeSection({
   const [state, setState]           = useState<ChallengeState>("idle");
   const [userAnswer, setUserAnswer] = useState("");
   const [showExample, setShowExample] = useState(false);
+  const [aiFeedback, setAiFeedback] = useState<string | null>(null);
 
   const wordCount   = userAnswer.trim().split(/\s+/).filter(Boolean).length;
   const containsWord = userAnswer.toLowerCase().includes(word.toLowerCase());
@@ -234,7 +234,25 @@ function ChallengeSection({
 
   function handleSubmit() {
     if (!isReady) return;
-    setState("submitted");
+    (async () => {
+      setState("submitted");
+      try {
+        const res = await fetch(`${import.meta.env.VITE_API_URL}/api/vocabulary/evaluate-sentence`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ word: word.toLowerCase(), sentence: userAnswer }),
+        });
+        if (!res.ok) throw new Error(await res.text());
+        const data = await res.json();
+        const feedback =
+          typeof data === "string"
+            ? data
+            : data.feedback ?? data.message ?? JSON.stringify(data);
+        setAiFeedback(feedback);
+      } catch (e) {
+        console.error("Sentence eval failed", e);
+      }
+    })();
   }
 
   function handleReset() {
@@ -403,6 +421,17 @@ function ChallengeSection({
             )}
           </div>
 
+          {aiFeedback && (
+            <div className="fl-card p-4 mb-4 border-primary/20 bg-primary/5">
+              <p className="text-xs font-semibold uppercase tracking-widest text-primary-light mb-2">
+                Feedback
+              </p>
+              <p className="text-sm text-text-primary leading-relaxed">
+                {aiFeedback}
+              </p>
+            </div>
+          )}
+
           {/* Try again */}
           <Button onClick={handleReset} variant="secondary" size="md">
             Write another sentence →
@@ -416,8 +445,20 @@ function ChallengeSection({
 // ── Page root ─────────────────────────────────────────────────────────────
 
 export default function WordOfTheDayPage() {
-  const word          = getTodaysWord();
+  const [word, setWord] = useState<WordOfTheDay | null>(null);
   const { speak, speaking } = useSpeech();
+
+  useEffect(() => {
+    fetch(`${import.meta.env.VITE_API_URL}/api/vocabulary/word-of-the-day`)
+      .then((r) => r.json())
+      .then(setWord)
+      .catch((e) => {
+        console.error("Failed to fetch word of the day", e);
+        setWord(getTodaysWord());
+      });
+  }, []);
+
+  if (!word) return <div className="fl-container py-20 text-text-muted">Loading…</div>;
 
   // Format today's date nicely
   const today = new Date().toLocaleDateString("en-GB", {
@@ -544,11 +585,8 @@ export default function WordOfTheDayPage() {
 
         {/* ── Come back tomorrow ── */}
         <div className="mt-6 text-center">
-          <p className="text-xs text-text-subtle">
-            A new word unlocks every day at midnight ·{" "}
-            <span className="text-primary-light">
-              {WORDS_OF_THE_DAY.length} words in rotation
-            </span>
+            <p className="text-xs text-text-subtle">
+            A new word unlocks every day at midnight
           </p>
         </div>
 

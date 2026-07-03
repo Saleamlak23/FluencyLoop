@@ -14,6 +14,7 @@ export interface Scenario {
   id: string;
   emoji: string;
   title: string;
+  role: string;
   description: string;
   level: Level;
   totalTurns: number;
