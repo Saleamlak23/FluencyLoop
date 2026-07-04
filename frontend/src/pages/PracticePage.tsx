@@ -1,20 +1,56 @@
 // src/pages/PracticePage.tsx
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import { NavLink } from "react-router-dom";
 import {
   WARMUP_QUESTIONS,
   DUMMY_CONVERSATION,
   DUMMY_SPEAKING_RESULT,
-  DUMMY_WRITING_FEEDBACK,
   DUMMY_SESSION_SUMMARY,
   SCENARIOS,
   WRITING_PROMPTS,
 } from "../lib/dummy-data";
-import type { SessionStep, ConversationTurn, WarmUpQuestion } from "../lib/types";
+import type {
+  SessionStep,
+  WarmUpQuestion,
+  WritingFeedback,
+} from "../lib/types";
 import Badge from "../components/ui/Badge";
 import Button from "../components/ui/Button";
 import ProgressBar from "../components/ui/ProgressBar";
+
+// ── Audio recorder hook ────────────────────────────────────────────────────
+// Used by SpeakingStep to capture mic audio and send to the transcribe API.
+
+function useAudioRecorder() {
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef        = useRef<Blob[]>([]);
+
+  async function start() {
+    const stream   = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const recorder = new MediaRecorder(stream, {
+      mimeType: "audio/webm;codecs=opus",
+    });
+    chunksRef.current          = [];
+    recorder.ondataavailable   = (e) => chunksRef.current.push(e.data);
+    recorder.start();
+    mediaRecorderRef.current   = recorder;
+  }
+
+  function stop(): Promise<Blob> {
+    return new Promise((resolve) => {
+      const recorder = mediaRecorderRef.current!;
+      recorder.onstop = () => {
+        const blob = new Blob(chunksRef.current, { type: "audio/webm" });
+        resolve(blob);
+      };
+      recorder.stop();
+      recorder.stream.getTracks().forEach((t) => t.stop());
+    });
+  }
+
+  return { start, stop };
+}
 
 // ── Session step config ───────────────────────────────────────────────────
 
@@ -40,19 +76,19 @@ function SessionStepper({ current }: { current: SessionStep }) {
 
           return (
             <div key={step.key} className="flex items-center flex-1 last:flex-none">
-              {/* Step node */}
               <div className="flex flex-col items-center gap-1.5">
                 <div
                   className={`
                     w-9 h-9 rounded-full flex items-center justify-center text-base
                     transition-all duration-300
-                    ${isDone   ? "bg-primary/20 text-primary"         : ""}
-                    ${isActive ? "bg-primary text-white shadow-glow"  : ""}
-                    ${isPending? "bg-border/40 text-text-subtle"       : ""}
+                    ${isDone    ? "bg-primary/20 text-primary"        : ""}
+                    ${isActive  ? "bg-primary text-white shadow-glow" : ""}
+                    ${isPending ? "bg-border/40 text-text-subtle"     : ""}
                   `}
                 >
                   {isDone ? (
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24"
+                      stroke="currentColor" strokeWidth={2.5}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                     </svg>
                   ) : (
@@ -67,9 +103,9 @@ function SessionStepper({ current }: { current: SessionStep }) {
                 </span>
               </div>
 
-              {/* Connector line */}
               {i < STEPS.length - 1 && (
-                <div className="flex-1 h-px mx-2 mb-5 sm:mb-0 transition-all duration-500"
+                <div
+                  className="flex-1 h-px mx-2 mb-5 sm:mb-0 transition-all duration-500"
                   style={{
                     background: isDone
                       ? "linear-gradient(to right, #6366F1, #6366F1)"
@@ -101,8 +137,6 @@ function WarmUpStep({
   return (
     <div className="fl-container pb-10 animate-slide-up">
       <div className="max-w-xl mx-auto">
-
-        {/* Intro */}
         <div className="text-center mb-8">
           <span className="text-5xl block mb-4">🧠</span>
           <h2 className="font-display text-display-sm font-bold text-text-primary mb-2">
@@ -114,7 +148,6 @@ function WarmUpStep({
           </p>
         </div>
 
-        {/* Question card */}
         <div className="fl-card p-5 mb-5 border-primary/20 bg-primary/5">
           <p className="text-xs font-semibold uppercase tracking-widest text-primary-light mb-2">
             Today's question
@@ -124,7 +157,6 @@ function WarmUpStep({
           </p>
         </div>
 
-        {/* Answer area */}
         <div className="fl-card p-1 mb-2 focus-within:border-primary/50 focus-within:shadow-glow transition-all duration-200">
           <textarea
             value={answer}
@@ -133,8 +165,7 @@ function WarmUpStep({
             rows={4}
             className="
               w-full bg-transparent px-4 py-3 text-base text-text-primary
-              placeholder:text-text-subtle resize-none outline-none
-              font-body leading-relaxed
+              placeholder:text-text-subtle resize-none outline-none font-body leading-relaxed
             "
           />
           <div className="px-4 pb-3 pt-1 border-t border-border/40 flex justify-between items-center">
@@ -166,11 +197,12 @@ function WarmUpStep({
 // ── Step 2: Speaking mini-drill ───────────────────────────────────────────
 
 function SpeakingStep({ onContinue }: { onContinue: () => void }) {
-  const scenario   = SCENARIOS[0];
-  // Only show first 4 turns (2 exchanges) in the practice flow
-  const turns      = DUMMY_CONVERSATION.slice(0, 4);
-  const [turnIndex, setTurnIndex]     = useState(0);
-  const [isRecording, setIsRecording] = useState(false);
+  const scenario    = SCENARIOS[0];
+  const turns       = DUMMY_CONVERSATION.slice(0, 4);
+  const audioRecorder = useAudioRecorder();               // ← now properly defined
+
+  const [turnIndex,    setTurnIndex]    = useState(0);
+  const [isRecording,  setIsRecording]  = useState(false);
 
   const visibleTurns = turns.slice(0, turnIndex + 1);
   const lastTurn     = visibleTurns[visibleTurns.length - 1];
@@ -178,26 +210,36 @@ function SpeakingStep({ onContinue }: { onContinue: () => void }) {
   const isDone       = turnIndex >= turns.length - 1;
   const progress     = Math.round(((turnIndex + 1) / turns.length) * 100);
 
-  function handleRecord() {
+  async function handleRecord() {
     if (!isRecording) {
-      // Real: start MediaRecorder
-      // API: POST /api/speaking/transcribe — body: FormData { audio, scenarioId, turnIndex }
       setIsRecording(true);
-      setTimeout(() => {
-        setIsRecording(false);
-        setTurnIndex((prev) => Math.min(prev + 1, turns.length - 1));
-      }, 1500);
+      await audioRecorder.start();
     } else {
       setIsRecording(false);
+      const blob = await audioRecorder.stop();
+      const form = new FormData();
+      form.append("audio",       blob, "turn.webm");
+      form.append("scenarioId",  scenario.id);
+      form.append("turnIndex",   String(turnIndex));
+      // API: POST /api/speech/transcribe
+      const res  = await fetch(
+        `${import.meta.env.VITE_API_URL}/api/speech/transcribe`,
+        { method: "POST", body: form }
+      );
+      const data = await res.json();
       setTurnIndex((prev) => Math.min(prev + 1, turns.length - 1));
+      // Speak AI reply via browser TTS — free, no API key
+      window.speechSynthesis.cancel();
+      const utt  = new SpeechSynthesisUtterance(data.ai_reply_text);
+      utt.lang   = "en-GB";
+      utt.rate   = 0.9;
+      window.speechSynthesis.speak(utt);
     }
   }
 
   return (
     <div className="fl-container pb-10 animate-slide-up">
       <div className="max-w-xl mx-auto">
-
-        {/* Header */}
         <div className="flex items-center gap-3 mb-5">
           <span className="text-2xl">{scenario.emoji}</span>
           <div>
@@ -211,7 +253,6 @@ function SpeakingStep({ onContinue }: { onContinue: () => void }) {
 
         <ProgressBar value={progress} variant="primary" size="sm" className="mb-6" />
 
-        {/* Conversation */}
         <div className="flex flex-col gap-4 mb-6">
           {visibleTurns.map((turn) => (
             <div
@@ -229,7 +270,6 @@ function SpeakingStep({ onContinue }: { onContinue: () => void }) {
                 max-w-[80%] fl-card px-4 py-3
                 ${turn.role === "ai" ? "border-border/60" : "border-accent/20 bg-accent/5"}
               `}>
-                {/* Word feedback for user turns */}
                 {turn.role === "user" && turn.wordFeedback ? (
                   <p className="text-base leading-loose">
                     {turn.wordFeedback.map((wf, i) => (
@@ -261,7 +301,6 @@ function SpeakingStep({ onContinue }: { onContinue: () => void }) {
           ))}
         </div>
 
-        {/* Action */}
         {!isDone ? (
           <div className="fl-card p-5 border-primary/20 bg-primary/5 text-center">
             {isAiTurn ? (
@@ -286,12 +325,6 @@ function SpeakingStep({ onContinue }: { onContinue: () => void }) {
                 <p className="text-xs text-text-subtle">
                   {isRecording ? "Recording… tap to stop" : "Tap to speak"}
                 </p>
-                <button
-                  onClick={handleRecord}
-                  className="text-xs text-primary-light underline underline-offset-2 opacity-60 hover:opacity-100"
-                >
-                  Skip (dummy response)
-                </button>
               </div>
             ) : (
               <div className="flex flex-col items-center gap-2">
@@ -325,33 +358,48 @@ function SpeakingStep({ onContinue }: { onContinue: () => void }) {
 
 // ── Step 3: Writing mini-drill ────────────────────────────────────────────
 
-function WritingStep({ onContinue }: { onContinue: () => void }) {
+function WritingStep({
+  onContinue,
+}: {
+  onContinue: (result: WritingFeedback | null) => void;
+}) {
   const prompt    = WRITING_PROMPTS[0];
-  const [text, setText]     = useState("");
-  const [loading, setLoading] = useState(false);
-  const [done, setDone]     = useState(false);
+  const [text,           setText]           = useState("");
+  const [loading,        setLoading]        = useState(false);
+  const [done,           setDone]           = useState(false);
+  const [writingResult,  setWritingResult]  = useState<WritingFeedback | null>(null);
 
-  const wordCount  = useMemo(() => text.trim().split(/\s+/).filter(Boolean).length, [text]);
-  const sentences  = useMemo(() => {
+  const wordCount = useMemo(
+    () => text.trim().split(/\s+/).filter(Boolean).length,
+    [text]
+  );
+  const sentences = useMemo(() => {
     const m = text.trim().match(/[^.!?]*[.!?]+/g);
     return m ? m.length : text.trim().length > 0 ? 1 : 0;
   }, [text]);
   const isReady = sentences >= prompt.minSentences && sentences <= prompt.maxSentences;
 
-  function handleSubmit() {
+  async function handleSubmit() {
     setLoading(true);
-    // API: POST /api/writing/evaluate — body: { promptId: prompt.id, text }
-    setTimeout(() => {
-      setLoading(false);
-      setDone(true);
-    }, 1800);
+    // API: POST /api/writing/evaluate — body: { promptId, text }
+    const res  = await fetch(
+      `${import.meta.env.VITE_API_URL}/api/writing/evaluate`,
+      {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ promptId: prompt.id, text }),
+      }
+    );
+    const data: WritingFeedback = await res.json();
+    setWritingResult(data);
+    setLoading(false);
+    setDone(true);
   }
 
   return (
     <div className="fl-container pb-10 animate-slide-up">
       <div className="max-w-xl mx-auto">
 
-        {/* Prompt card */}
         <div className="fl-card p-5 mb-5 border-accent/20 bg-accent/5 flex items-start gap-4">
           <span className="text-3xl shrink-0">{prompt.emoji}</span>
           <div>
@@ -367,7 +415,6 @@ function WritingStep({ onContinue }: { onContinue: () => void }) {
 
         {!done ? (
           <>
-            {/* Textarea */}
             <div className="fl-card p-1 mb-3 focus-within:border-accent/50 focus-within:shadow-glow-accent transition-all duration-200">
               <textarea
                 value={text}
@@ -376,8 +423,7 @@ function WritingStep({ onContinue }: { onContinue: () => void }) {
                 rows={6}
                 className="
                   w-full bg-transparent px-4 py-3 text-base text-text-primary
-                  placeholder:text-text-subtle resize-none outline-none
-                  font-body leading-relaxed
+                  placeholder:text-text-subtle resize-none outline-none font-body leading-relaxed
                 "
               />
               <div className="px-4 pb-3 pt-1 border-t border-border/40 flex justify-between">
@@ -402,7 +448,7 @@ function WritingStep({ onContinue }: { onContinue: () => void }) {
             </Button>
           </>
         ) : (
-          /* Lightweight feedback preview (full feedback is on /writing) */
+          // ── done state ── show quick feedback + continue button
           <div className="animate-slide-up">
             <div className="fl-card p-5 mb-4 border-correct/20 bg-correct/5">
               <p className="text-xs font-semibold uppercase tracking-widest text-correct mb-3">
@@ -410,17 +456,23 @@ function WritingStep({ onContinue }: { onContinue: () => void }) {
               </p>
               <div className="flex items-center gap-3 mb-4">
                 <span className="font-display font-bold text-4xl text-caution">
-                  {DUMMY_WRITING_FEEDBACK.overallScore}/5
+                  {writingResult?.overallScore ?? "—"}/5
                 </span>
                 <div>
-                  <p className="text-sm font-medium text-text-primary">Developing</p>
+                  <p className="text-sm font-medium text-text-primary">
+                    {writingResult
+                      ? writingResult.overallScore >= 4 ? "Good"
+                      : writingResult.overallScore >= 3 ? "Developing"
+                      : "Needs work"
+                      : ""}
+                  </p>
                   <p className="text-xs text-text-muted">
-                    {DUMMY_WRITING_FEEDBACK.errors.length} corrections found
+                    {writingResult?.errors.length ?? 0} corrections found
                   </p>
                 </div>
               </div>
               <ul className="flex flex-col gap-2">
-                {DUMMY_WRITING_FEEDBACK.topInsights.map((insight, i) => (
+                {(writingResult?.topInsights ?? []).map((insight, i) => (
                   <li key={i} className="flex items-start gap-2 text-xs text-text-muted">
                     <span className="text-accent shrink-0 mt-0.5">→</span>
                     {insight}
@@ -434,7 +486,8 @@ function WritingStep({ onContinue }: { onContinue: () => void }) {
             </p>
 
             <Button
-              onClick={onContinue}
+            
+              onClick={() => onContinue(writingResult)}  
               size="lg"
               className="w-full justify-center"
               rightIcon={<span>→</span>}
@@ -450,10 +503,28 @@ function WritingStep({ onContinue }: { onContinue: () => void }) {
 
 // ── Step 4: Session summary ───────────────────────────────────────────────
 
-function SummaryStep({ onRestart }: { onRestart: () => void }) {
-  const summary = DUMMY_SESSION_SUMMARY;
-  const speaking = summary.speakingResult;
-  const writing  = summary.writingFeedback;
+function SummaryStep({
+  onRestart,
+  writingFeedback,
+}: {
+  onRestart: () => void;
+  writingFeedback: WritingFeedback | null;         // ← real writing data passed in
+}) {
+  // Real writing data; dummy speaking + streak until those integrations are done
+  // TODO item 11: replace DUMMY_SPEAKING_RESULT with real speaking result from API
+  // TODO item 16: replace streak/sessionsCompleted with GET /api/user/progress
+  const speaking = DUMMY_SPEAKING_RESULT;
+  const writing  = writingFeedback ?? DUMMY_SESSION_SUMMARY.writingFeedback;
+  const streak   = DUMMY_SESSION_SUMMARY.streak;
+  const sessions = DUMMY_SESSION_SUMMARY.sessionsCompleted;
+
+  const topInsights = writingFeedback
+    ? writingFeedback.topInsights
+    : DUMMY_SESSION_SUMMARY.topInsights;
+
+  const levelSuggestion =
+    writing.overallScore >= 4 ? "upgrade" :
+    writing.overallScore >= 3 ? "stay"    : "encourage";
 
   const levelMessages = {
     stay:      "You're building great habits — keep this level and master it.",
@@ -465,7 +536,6 @@ function SummaryStep({ onRestart }: { onRestart: () => void }) {
     <div className="fl-container pb-14 animate-slide-up">
       <div className="max-w-xl mx-auto">
 
-        {/* Hero */}
         <div className="text-center mb-8">
           <div className="text-6xl mb-4 animate-pulse-slow">✨</div>
           <h2 className="font-display text-display-md font-bold text-text-primary mb-2">
@@ -476,27 +546,24 @@ function SummaryStep({ onRestart }: { onRestart: () => void }) {
           </p>
         </div>
 
-        {/* Streak + sessions */}
         <div className="grid grid-cols-2 gap-3 mb-6">
           <div className="fl-card p-5 text-center border-accent/20 bg-glow-accent">
             <div className="text-4xl mb-1">🔥</div>
             <div className="font-display font-bold text-3xl text-accent mb-0.5">
-              {summary.streak}
+              {streak}
             </div>
             <div className="text-xs text-text-subtle">day streak</div>
           </div>
           <div className="fl-card p-5 text-center">
             <div className="text-4xl mb-1">📅</div>
             <div className="font-display font-bold text-3xl text-primary mb-0.5">
-              {summary.sessionsCompleted}
+              {sessions}
             </div>
             <div className="text-xs text-text-subtle">sessions total</div>
           </div>
         </div>
 
-        {/* Speaking vs Writing breakdown */}
         <div className="grid grid-cols-2 gap-3 mb-6">
-          {/* Speaking */}
           <div className="fl-card p-4">
             <div className="flex items-center gap-2 mb-3">
               <span className="text-lg">🎙️</span>
@@ -516,7 +583,6 @@ function SummaryStep({ onRestart }: { onRestart: () => void }) {
             </p>
           </div>
 
-          {/* Writing */}
           <div className="fl-card p-4">
             <div className="flex items-center gap-2 mb-3">
               <span className="text-lg">✍️</span>
@@ -537,13 +603,12 @@ function SummaryStep({ onRestart }: { onRestart: () => void }) {
           </div>
         </div>
 
-        {/* Top combined insights */}
         <div className="fl-card p-5 mb-5">
           <p className="text-xs font-semibold uppercase tracking-widest text-primary-light mb-3">
             Today's top takeaways
           </p>
           <ul className="flex flex-col gap-2.5">
-            {summary.topInsights.map((insight, i) => (
+            {topInsights.map((insight, i) => (
               <li key={i} className="flex items-start gap-2 text-sm text-text-muted">
                 <span className="w-5 h-5 rounded-full bg-primary/15 text-primary text-xs flex items-center justify-center shrink-0 mt-0.5 font-semibold">
                   {i + 1}
@@ -554,18 +619,16 @@ function SummaryStep({ onRestart }: { onRestart: () => void }) {
           </ul>
         </div>
 
-        {/* Level suggestion */}
         <div className="fl-card p-4 mb-8 flex items-start gap-3 border-correct/20 bg-correct/5">
           <span className="text-xl mt-0.5">🎯</span>
           <div>
             <p className="text-sm font-medium text-text-primary mb-0.5">Level suggestion</p>
             <p className="text-xs text-text-muted leading-relaxed">
-              {levelMessages[summary.levelSuggestion]}
+              {levelMessages[levelSuggestion]}
             </p>
           </div>
         </div>
 
-        {/* Actions */}
         <div className="flex flex-col gap-3">
           <Button onClick={onRestart} size="lg" className="w-full justify-center">
             Start another session →
@@ -582,7 +645,11 @@ function SummaryStep({ onRestart }: { onRestart: () => void }) {
               </Button>
             </NavLink>
           </div>
-          <Button variant="ghost" size="md" className="w-full justify-center text-text-subtle">
+          <Button
+            variant="ghost"
+            size="md"
+            className="w-full justify-center text-text-subtle"
+          >
             {/* API: POST /api/session/save */}
             Save session to progress
           </Button>
@@ -595,9 +662,9 @@ function SummaryStep({ onRestart }: { onRestart: () => void }) {
 // ── Page root ─────────────────────────────────────────────────────────────
 
 export default function PracticePage() {
-  const [step, setStep] = useState<SessionStep>("warmup");
+  const [step,           setStep]           = useState<SessionStep>("warmup");
+  const [writingFeedback, setWritingFeedback] = useState<WritingFeedback | null>(null);
 
-  // Pick a random warm-up question
   const question = useMemo(
     () => WARMUP_QUESTIONS[Math.floor(Math.random() * WARMUP_QUESTIONS.length)],
     []
@@ -605,17 +672,14 @@ export default function PracticePage() {
 
   function handleRestart() {
     setStep("warmup");
+    setWritingFeedback(null);
   }
 
   return (
     <div className="min-h-full">
-      {/* Step indicator */}
       <SessionStepper current={step} />
-
-      {/* Divider */}
       <div className="border-t border-border/40 mb-2" />
 
-      {/* Active step */}
       {step === "warmup" && (
         <WarmUpStep
           question={question}
@@ -626,10 +690,18 @@ export default function PracticePage() {
         <SpeakingStep onContinue={() => setStep("writing")} />
       )}
       {step === "writing" && (
-        <WritingStep onContinue={() => setStep("summary")} />
+        <WritingStep
+          onContinue={(result) => {         {/* ← captures real result */}
+            setWritingFeedback(result);
+            setStep("summary");
+          }}
+        />
       )}
       {step === "summary" && (
-        <SummaryStep onRestart={handleRestart} />
+        <SummaryStep
+          onRestart={handleRestart}
+          writingFeedback={writingFeedback} 
+        />
       )}
     </div>
   );

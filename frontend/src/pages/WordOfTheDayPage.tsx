@@ -1,11 +1,9 @@
 // src/pages/WordOfTheDayPage.tsx
 
-import { useState, useCallback } from "react";
-import { getTodaysWord } from "../lib/dummy-data";
-import type { WordDefinition } from "../lib/types";
+import { useState, useCallback, useEffect } from "react";
+import type { WordOfTheDay, WordDefinition } from "../lib/types";
 import Badge from "../components/ui/Badge";
 import Button from "../components/ui/Button";
-import { WORDS_OF_THE_DAY } from "../lib/dummy-data";
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -64,8 +62,7 @@ function PronounceButton({
       `}
       aria-label={`Hear pronunciation of ${word}`}
     >
-      {/* Speaker icon */}
-      <span className={`relative flex items-center justify-center w-5 h-5`}>
+      <span className="relative flex items-center justify-center w-5 h-5">
         <svg
           className={`w-4 h-4 transition-transform duration-200 ${speaking ? "scale-110" : "group-hover:scale-110"}`}
           fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
@@ -90,7 +87,6 @@ function DefinitionCard({ definition }: { definition: WordDefinition }) {
 
   return (
     <div className="fl-card p-5">
-      {/* Part of speech + toggle */}
       <div className="flex items-center justify-between mb-3">
         <Badge variant={PART_OF_SPEECH_VARIANT[definition.partOfSpeech]}>
           {definition.partOfSpeech}
@@ -103,22 +99,17 @@ function DefinitionCard({ definition }: { definition: WordDefinition }) {
         </button>
       </div>
 
-      {/* Meaning */}
       <p className="text-text-primary text-base leading-relaxed mb-4">
         {definition.meaning}
       </p>
 
-      {/* Examples */}
       {expanded && (
         <div className="flex flex-col gap-3 animate-fade-in">
           <p className="text-xs font-semibold uppercase tracking-widest text-text-subtle">
             In context
           </p>
           {definition.examples.map((ex, i) => (
-            <div
-              key={i}
-              className="border-l-2 border-primary/30 pl-4 py-0.5"
-            >
+            <div key={i} className="border-l-2 border-primary/30 pl-4 py-0.5">
               <p className="text-xs font-medium text-primary-light mb-1">
                 {ex.context}
               </p>
@@ -133,7 +124,7 @@ function DefinitionCard({ definition }: { definition: WordDefinition }) {
   );
 }
 
-// ── Hint system ───────────────────────────────────────────────────────────
+// ── Hint section ──────────────────────────────────────────────────────────
 
 function HintSection({ hints }: { hints: string[] }) {
   const [revealed, setRevealed] = useState(0);
@@ -167,7 +158,6 @@ function HintSection({ hints }: { hints: string[] }) {
 
       {open && (
         <div className="mt-3 flex flex-col gap-2 animate-fade-in">
-          {/* Revealed hints */}
           {hints.slice(0, revealed).map((hint, i) => (
             <div
               key={i}
@@ -185,7 +175,6 @@ function HintSection({ hints }: { hints: string[] }) {
             </div>
           ))}
 
-          {/* Reveal next / all revealed */}
           {revealed < hints.length ? (
             <button
               onClick={revealNext}
@@ -224,29 +213,46 @@ function ChallengeSection({
   exampleAnswer: string;
   word: string;
 }) {
-  const [state, setState]           = useState<ChallengeState>("idle");
-  const [userAnswer, setUserAnswer] = useState("");
-  const [showExample, setShowExample] = useState(false);
+  const [state,         setState]         = useState<ChallengeState>("idle");
+  const [userAnswer,    setUserAnswer]    = useState("");
+  const [showExample,   setShowExample]   = useState(false);
+  const [aiFeedback,    setAiFeedback]    = useState<{
+    contains_word: boolean;
+    used_correctly: boolean;
+    feedback: string;
+    improvement: string | null;
+  } | null>(null);
 
-  const wordCount   = userAnswer.trim().split(/\s+/).filter(Boolean).length;
+  const wordCount    = userAnswer.trim().split(/\s+/).filter(Boolean).length;
   const containsWord = userAnswer.toLowerCase().includes(word.toLowerCase());
-  const isReady     = wordCount >= 4 && containsWord;
+  const isReady      = wordCount >= 4 && containsWord;
 
-  function handleSubmit() {
+  async function handleSubmit() {
     if (!isReady) return;
     setState("submitted");
+    // API: POST /api/vocabulary/evaluate-sentence — body: { word, sentence }
+    const res  = await fetch(
+      `${import.meta.env.VITE_API_URL}/api/vocabulary/evaluate-sentence`,
+      {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ word: word.toLowerCase(), sentence: userAnswer }),
+      }
+    );
+    const data = await res.json();
+    setAiFeedback(data);
   }
 
   function handleReset() {
     setState("idle");
     setUserAnswer("");
     setShowExample(false);
+    setAiFeedback(null);
   }
 
   return (
     <div className="fl-card p-6 border-primary/15 bg-glow-primary">
 
-      {/* Header */}
       <div className="flex items-start gap-3 mb-5">
         <div className="w-9 h-9 rounded-full bg-primary/20 text-primary flex items-center justify-center text-lg shrink-0">
           🏆
@@ -274,7 +280,6 @@ function ChallengeSection({
 
       {state === "writing" && (
         <div className="animate-slide-up">
-          {/* Textarea */}
           <div className="fl-card p-1 mb-2 focus-within:border-primary/50 focus-within:shadow-glow transition-all duration-200">
             <textarea
               value={userAnswer}
@@ -288,8 +293,6 @@ function ChallengeSection({
                 font-body leading-relaxed
               "
             />
-
-            {/* Toolbar */}
             <div className="px-4 pb-3 pt-1 border-t border-border/40 flex items-center justify-between">
               <div className="flex items-center gap-3 text-xs text-text-subtle">
                 <span>{wordCount} words</span>
@@ -309,14 +312,11 @@ function ChallengeSection({
                 )}
               </div>
               {isReady && (
-                <span className="text-xs text-correct animate-fade-in">
-                  Ready ✓
-                </span>
+                <span className="text-xs text-correct animate-fade-in">Ready ✓</span>
               )}
             </div>
           </div>
 
-          {/* Validation message */}
           {userAnswer.length > 0 && !isReady && (
             <p className="text-xs text-text-subtle mb-3">
               {!containsWord
@@ -325,7 +325,6 @@ function ChallengeSection({
             </p>
           )}
 
-          {/* Submit */}
           <div className="flex items-center gap-3 mt-3">
             <Button
               onClick={handleSubmit}
@@ -343,13 +342,13 @@ function ChallengeSection({
             </button>
           </div>
 
-          {/* Hint system */}
           <HintSection hints={hints} />
         </div>
       )}
 
       {state === "submitted" && (
         <div className="animate-slide-up">
+
           {/* User's answer */}
           <div className="fl-card p-4 mb-4 border-correct/20 bg-correct/5">
             <p className="text-xs font-semibold uppercase tracking-widest text-correct mb-2">
@@ -358,9 +357,7 @@ function ChallengeSection({
             <p className="text-base text-text-primary leading-relaxed">
               {userAnswer.split(new RegExp(`(${word})`, "gi")).map((part, i) =>
                 part.toLowerCase() === word.toLowerCase() ? (
-                  <span key={i} className="text-primary font-semibold">
-                    {part}
-                  </span>
+                  <span key={i} className="text-primary font-semibold">{part}</span>
                 ) : (
                   <span key={i}>{part}</span>
                 )
@@ -368,20 +365,45 @@ function ChallengeSection({
             </p>
           </div>
 
-          {/* Encouragement */}
-          <div className="flex items-start gap-3 mb-4 px-1">
-            <span className="text-2xl">🎉</span>
-            <div>
-              <p className="text-sm font-medium text-text-primary mb-0.5">
-                Great effort!
-              </p>
-              <p className="text-xs text-text-muted leading-relaxed">
-                You used <span className="text-primary font-medium">"{word}"</span> in
-                your own sentence. That's how vocabulary actually sticks — through
-                production, not just reading.
-              </p>
+          {/* AI feedback — shown once API responds */}
+          {aiFeedback ? (
+            <div className="fl-card p-4 mb-4 border-primary/20 bg-primary/5 animate-fade-in">
+              <div className="flex items-start gap-3">
+                <span className="text-2xl shrink-0">
+                  {aiFeedback.used_correctly ? "🎉" : "💡"}
+                </span>
+                <div>
+                  <p className="text-sm font-medium text-text-primary mb-1">
+                    {aiFeedback.used_correctly ? "Great usage!" : "Good try!"}
+                  </p>
+                  <p className="text-xs text-text-muted leading-relaxed">
+                    {aiFeedback.feedback}
+                  </p>
+                  {aiFeedback.improvement && (
+                    <p className="text-xs text-primary-light mt-2 italic">
+                      Suggestion: "{aiFeedback.improvement}"
+                    </p>
+                  )}
+                </div>
+              </div>
             </div>
-          </div>
+          ) : (
+            /* Loading state while API call completes */
+            <div className="fl-card p-4 mb-4 border-border/60 animate-pulse-slow">
+              <div className="flex items-center gap-2 text-xs text-text-subtle">
+                <div className="flex gap-1">
+                  {[0, 1, 2].map((i) => (
+                    <span
+                      key={i}
+                      className="w-1.5 h-1.5 rounded-full bg-primary/40 animate-pulse-slow"
+                      style={{ animationDelay: `${i * 0.2}s` }}
+                    />
+                  ))}
+                </div>
+                Analysing your sentence…
+              </div>
+            </div>
+          )}
 
           {/* Example answer toggle */}
           <div className="mb-5">
@@ -403,7 +425,6 @@ function ChallengeSection({
             )}
           </div>
 
-          {/* Try again */}
           <Button onClick={handleReset} variant="secondary" size="md">
             Write another sentence →
           </Button>
@@ -416,10 +437,24 @@ function ChallengeSection({
 // ── Page root ─────────────────────────────────────────────────────────────
 
 export default function WordOfTheDayPage() {
-  const word          = getTodaysWord();
-  const { speak, speaking } = useSpeech();
 
-  // Format today's date nicely
+  // ── All hooks at the top — before any early return ────────────────────
+  const [word, setWord]         = useState<WordOfTheDay | null>(null);
+  const [error, setError]       = useState(false);
+  const { speak, speaking }     = useSpeech();  // ✅ called unconditionally
+
+  useEffect(() => {
+    // API: GET /api/vocabulary/word-of-the-day
+    fetch(`${import.meta.env.VITE_API_URL}/api/vocabulary/word-of-the-day`)
+      .then((r) => {
+        if (!r.ok) throw new Error("Failed to fetch word of the day");
+        return r.json();
+      })
+      .then(setWord)
+      .catch(() => setError(true));
+  }, []);
+
+  // Format today's date
   const today = new Date().toLocaleDateString("en-GB", {
     weekday: "long",
     day:     "numeric",
@@ -427,6 +462,40 @@ export default function WordOfTheDayPage() {
     year:    "numeric",
   });
 
+  // ── Loading state ──────────────────────────────────────────────────────
+  if (!word && !error) {
+    return (
+      <div className="fl-container py-20 text-center">
+        <div className="flex gap-1 justify-center mb-4">
+          {[0, 1, 2].map((i) => (
+            <span
+              key={i}
+              className="w-2 h-2 rounded-full bg-primary/40 animate-pulse-slow"
+              style={{ animationDelay: `${i * 0.2}s` }}
+            />
+          ))}
+        </div>
+        <p className="text-sm text-text-muted">Loading today's word…</p>
+      </div>
+    );
+  }
+
+  // ── Error state ────────────────────────────────────────────────────────
+  if (error || !word) {
+    return (
+      <div className="fl-container py-20 text-center">
+        <p className="text-4xl mb-4">😕</p>
+        <p className="text-sm text-text-muted mb-4">
+          Couldn't load today's word. Please check your connection and try again.
+        </p>
+        <Button onClick={() => window.location.reload()} variant="secondary" size="md">
+          Retry
+        </Button>
+      </div>
+    );
+  }
+
+  // ── Main content ───────────────────────────────────────────────────────
   return (
     <div className="fl-container py-10 animate-fade-in">
       <div className="max-w-2xl mx-auto">
@@ -438,11 +507,8 @@ export default function WordOfTheDayPage() {
 
         {/* ── Word hero ── */}
         <div className="fl-card p-8 mb-6 border-primary/15 relative overflow-hidden">
-          {/* Background glow */}
           <div className="absolute inset-0 bg-glow-primary pointer-events-none" />
-
           <div className="relative">
-            {/* Label */}
             <div className="flex items-center gap-2 mb-4">
               <span className="text-lg">✨</span>
               <p className="text-xs font-semibold uppercase tracking-widest text-primary-light">
@@ -450,12 +516,10 @@ export default function WordOfTheDayPage() {
               </p>
             </div>
 
-            {/* Word */}
             <h1 className="font-display font-bold text-display-xl text-text-primary mb-2 leading-none">
               {word.word}
             </h1>
 
-            {/* Phonetic + pronounce button */}
             <div className="flex items-center gap-4 mb-5 flex-wrap">
               <span className="text-lg text-text-muted font-body tracking-wide">
                 {word.phonetic}
@@ -467,14 +531,9 @@ export default function WordOfTheDayPage() {
               />
             </div>
 
-            {/* Part-of-speech badges */}
             <div className="flex flex-wrap gap-2">
               {word.definitions.map((def, i) => (
-                <Badge
-                  key={i}
-                  variant={PART_OF_SPEECH_VARIANT[def.partOfSpeech]}
-                  dot
-                >
+                <Badge key={i} variant={PART_OF_SPEECH_VARIANT[def.partOfSpeech]} dot>
                   {def.partOfSpeech}
                 </Badge>
               ))}
@@ -494,7 +553,7 @@ export default function WordOfTheDayPage() {
           </div>
         </div>
 
-        {/* ── Pronunciation section ── */}
+        {/* ── Pronunciation practice ── */}
         <div className="fl-card p-5 mb-6 border-border/60">
           <div className="flex items-center justify-between flex-wrap gap-4">
             <div>
@@ -512,7 +571,9 @@ export default function WordOfTheDayPage() {
                 onSpeak={() => speak(word.word)}
               />
               <button
-                onClick={() => speak(`${word.word}. ${word.definitions[0]?.meaning ?? ""}`)}
+                onClick={() =>
+                  speak(`${word.word}. ${word.definitions[0]?.meaning ?? ""}`)
+                }
                 className="
                   flex items-center gap-2 px-4 py-2 rounded-pill border border-border
                   text-sm font-medium text-text-muted
@@ -521,8 +582,8 @@ export default function WordOfTheDayPage() {
                 "
               >
                 <svg
-                  className="w-4 h-4"
-                  fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
+                  className="w-4 h-4" fill="none" viewBox="0 0 24 24"
+                  stroke="currentColor" strokeWidth={2}
                 >
                   <path strokeLinecap="round" strokeLinejoin="round"
                     d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"
@@ -542,13 +603,10 @@ export default function WordOfTheDayPage() {
           word={word.word}
         />
 
-        {/* ── Come back tomorrow ── */}
+        {/* ── Footer note ── */}
         <div className="mt-6 text-center">
           <p className="text-xs text-text-subtle">
-            A new word unlocks every day at midnight ·{" "}
-            <span className="text-primary-light">
-              {WORDS_OF_THE_DAY.length} words in rotation
-            </span>
+            A new word unlocks every day at midnight
           </p>
         </div>
 
@@ -556,4 +614,3 @@ export default function WordOfTheDayPage() {
     </div>
   );
 }
-

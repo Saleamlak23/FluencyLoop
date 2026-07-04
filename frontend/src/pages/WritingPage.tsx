@@ -1,7 +1,7 @@
 // src/pages/WritingPage.tsx
 
 import { useState, useMemo } from "react";
-import { WRITING_PROMPTS, DUMMY_WRITING_FEEDBACK } from "../lib/dummy-data";
+import { WRITING_PROMPTS } from "../lib/dummy-data";
 import type { WritingPrompt, WritingFeedback, InlineError } from "../lib/types";
 import Badge from "../components/ui/Badge";
 import Button from "../components/ui/Button";
@@ -29,9 +29,11 @@ function scoreLabel(score: number): string {
   return "Needs work";
 }
 
+type ErrorVariant = "error" | "caution" | "primary" | "accent";
+
 type ErrorTypeMeta = {
   label: string;
-  variant: "error" | "caution" | "primary" | "accent";
+  variant: ErrorVariant;
 };
 
 const ERROR_TYPE_META: Record<InlineError["type"], ErrorTypeMeta> = {
@@ -41,7 +43,7 @@ const ERROR_TYPE_META: Record<InlineError["type"], ErrorTypeMeta> = {
   vocabulary: { label: "Vocabulary", variant: "accent"  },
 };
 
-// ── Inline-highlighted rewritten text ────────────────────────────────────
+// ── Inline-highlighted text ───────────────────────────────────────────────
 
 function HighlightedText({
   text,
@@ -54,10 +56,8 @@ function HighlightedText({
   activeError: number | null;
   onHover: (i: number | null) => void;
 }) {
-  // Split original text into segments: normal | error
   const segments: { text: string; errorIndex: number | null }[] = [];
   let remaining = text;
-  let cursor = 0;
 
   errors.forEach((err, i) => {
     const idx = remaining.indexOf(err.original);
@@ -75,9 +75,8 @@ function HighlightedText({
         if (seg.errorIndex === null) {
           return <span key={i}>{seg.text}</span>;
         }
-        const err = errors[seg.errorIndex];
+        const err      = errors[seg.errorIndex];
         const isActive = activeError === seg.errorIndex;
-        const meta = ERROR_TYPE_META[err.type];
 
         return (
           <span
@@ -87,7 +86,11 @@ function HighlightedText({
               ${err.type === "grammar" || err.type === "spelling"
                 ? "border-b-2 border-error/70 hover:bg-error/10"
                 : "border-b-2 border-caution/70 hover:bg-caution/10"}
-              ${isActive ? (err.type === "grammar" || err.type === "spelling" ? "bg-error/10" : "bg-caution/10") : ""}
+              ${isActive
+                ? err.type === "grammar" || err.type === "spelling"
+                  ? "bg-error/10"
+                  : "bg-caution/10"
+                : ""}
             `}
             onMouseEnter={() => onHover(seg.errorIndex)}
             onMouseLeave={() => onHover(null)}
@@ -167,12 +170,15 @@ function WritingEditor({
 }) {
   const [text, setText] = useState("");
 
-  const sentences   = useMemo(() => countSentences(text), [text]);
-  const wordCount   = useMemo(() => text.trim().split(/\s+/).filter(Boolean).length, [text]);
-  const isUnder     = sentences < prompt.minSentences;
-  const isOver      = sentences > prompt.maxSentences;
-  const isReady     = !isUnder && !isOver && text.trim().length > 0;
-  const progress    = Math.min(100, Math.round((sentences / prompt.maxSentences) * 100));
+  const sentences = useMemo(() => countSentences(text), [text]);
+  const wordCount  = useMemo(
+    () => text.trim().split(/\s+/).filter(Boolean).length,
+    [text]
+  );
+  const isUnder = sentences < prompt.minSentences;
+  const isOver  = sentences > prompt.maxSentences;
+  const isReady = !isUnder && !isOver && text.trim().length > 0;
+  const progress = Math.min(100, Math.round((sentences / prompt.maxSentences) * 100));
 
   return (
     <div className="fl-container py-10 animate-slide-up">
@@ -203,19 +209,17 @@ function WritingEditor({
             font-body leading-relaxed
           "
         />
-
-        {/* Toolbar */}
         <div className="flex items-center justify-between px-4 pb-3 pt-1 border-t border-border/40">
           <div className="flex items-center gap-3 text-xs text-text-subtle">
             <span>
-              <span className={sentences > 0 ? "text-text-muted" : ""}>{sentences}</span>
+              <span className={sentences > 0 ? "text-text-muted" : ""}>
+                {sentences}
+              </span>
               /{prompt.minSentences}–{prompt.maxSentences} sentences
             </span>
             <span className="w-px h-3 bg-border" />
             <span>{wordCount} words</span>
           </div>
-
-          {/* Sentence progress */}
           <div className="w-24">
             <ProgressBar
               value={progress}
@@ -231,8 +235,7 @@ function WritingEditor({
       {text.trim().length > 0 && (
         <p className={`text-xs mb-5 ${
           isOver  ? "text-error"   :
-          isReady ? "text-correct" :
-                    "text-text-subtle"
+          isReady ? "text-correct" : "text-text-subtle"
         }`}>
           {isOver
             ? `Too long — aim for ${prompt.maxSentences} sentences or fewer.`
@@ -242,7 +245,6 @@ function WritingEditor({
         </p>
       )}
 
-      {/* Submit */}
       <Button
         onClick={() => onSubmit(text)}
         disabled={!isReady}
@@ -261,25 +263,38 @@ function WritingEditor({
 
 function FeedbackPanel({
   feedback,
-  prompt,
   onRestart,
 }: {
   feedback: WritingFeedback;
-  prompt: WritingPrompt;
   onRestart: () => void;
 }) {
   const [activeError, setActiveError] = useState<number | null>(null);
-  const [tab, setTab] = useState<"original" | "rewritten">("original");
+  const [tab,         setTab]         = useState<"original" | "rewritten">("original");
+  const [saving,      setSaving]      = useState(false);
+  const [saved,       setSaved]       = useState(false);
 
   const active = activeError !== null ? feedback.errors[activeError] : null;
 
-  const errorsByType = feedback.errors.reduce(
+  // Count errors by type
+  const errorsByType = feedback.errors.reduce<Record<string, number>>(
     (acc, err) => {
       acc[err.type] = (acc[err.type] || 0) + 1;
       return acc;
     },
-    {} as Record<string, number>
+    {}
   );
+
+  async function handleSave() {
+    setSaving(true);
+    // API: POST /api/session/save — body: { writingFeedback: feedback }
+    await fetch(`${import.meta.env.VITE_API_URL}/api/session/save`, {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({ writingFeedback: feedback }),
+    });
+    setSaving(false);
+    setSaved(true);
+  }
 
   return (
     <div className="fl-container py-10 animate-slide-up">
@@ -302,20 +317,22 @@ function FeedbackPanel({
           <div className="text-xs text-text-subtle">{scoreLabel(feedback.overallScore)}</div>
         </div>
 
-        {(Object.entries(errorsByType) as [InlineError["type"], number][]).map(([type, count]) => {
+        {(Object.entries(errorsByType) as [InlineError["type"], number][]).map(
+          ([type, count]) => {
             const meta = ERROR_TYPE_META[type];
             return (
-                <div key={type} className="fl-card p-4 text-center">
-                <div className={`font-display font-bold text-3xl mb-1 text-${
-                    meta.variant === "error" ? "error" :
-                    meta.variant === "caution" ? "caution" : "accent"
+              <div key={type} className="fl-card p-4 text-center">
+                <div className={`font-display font-bold text-3xl mb-1 ${
+                  meta.variant === "error"   ? "text-error"   :
+                  meta.variant === "caution" ? "text-caution" : "text-accent"
                 }`}>
-                {count}
+                  {count}
+                </div>
+                <div className="text-xs text-text-subtle">{meta.label}</div>
               </div>
-              <div className="text-xs text-text-subtle">{meta.label}</div>
-            </div>
-          );
-        })}
+            );
+          }
+        )}
       </div>
 
       {/* Tab switcher */}
@@ -385,7 +402,8 @@ function FeedbackPanel({
               className="text-text-subtle hover:text-text-muted transition-colors shrink-0 mt-0.5"
               aria-label="Dismiss"
             >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24"
+                stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
               </svg>
             </button>
@@ -408,7 +426,10 @@ function FeedbackPanel({
               }}
               className="flex items-start gap-3 text-left group"
             >
-              <Badge variant={ERROR_TYPE_META[err.type].variant} className="mt-0.5 shrink-0">
+              <Badge
+                variant={ERROR_TYPE_META[err.type].variant}
+                className="mt-0.5 shrink-0"
+              >
                 {ERROR_TYPE_META[err.type].label}
               </Badge>
               <div className="flex-1 min-w-0">
@@ -444,9 +465,14 @@ function FeedbackPanel({
         <Button onClick={onRestart} size="lg">
           Try another prompt →
         </Button>
-        <Button variant="secondary" size="lg">
-          {/* API: POST /api/session/save */}
-          Save to my progress
+        <Button
+          variant="secondary"
+          size="lg"
+          onClick={handleSave}
+          loading={saving}
+          disabled={saved}
+        >
+          {saved ? "✓ Saved!" : "Save to my progress"}
         </Button>
       </div>
     </div>
@@ -458,9 +484,9 @@ function FeedbackPanel({
 type View = "picker" | "editor" | "feedback";
 
 export default function WritingPage() {
-  const [view, setView]         = useState<View>("picker");
-  const [prompt, setPrompt]     = useState<WritingPrompt | null>(null);
-  const [loading, setLoading]   = useState(false);
+  const [view,     setView]     = useState<View>("picker");
+  const [prompt,   setPrompt]   = useState<WritingPrompt | null>(null);
+  const [loading,  setLoading]  = useState(false);
   const [feedback, setFeedback] = useState<WritingFeedback | null>(null);
 
   function handleSelectPrompt(p: WritingPrompt) {
@@ -468,15 +494,22 @@ export default function WritingPage() {
     setView("editor");
   }
 
-  function handleSubmit(text: string) {
+  async function handleSubmit(text: string) {
     setLoading(true);
-    // Real: POST /api/writing/evaluate — body: { promptId: prompt.id, text }
-    // Response: WritingFeedback
-    setTimeout(() => {
-      setFeedback(DUMMY_WRITING_FEEDBACK);
-      setLoading(false);
-      setView("feedback");
-    }, 1800);
+    // API: POST /api/writing/evaluate — body: { promptId, text }
+    // Response shape matches WritingFeedback type exactly
+    const res  = await fetch(
+      `${import.meta.env.VITE_API_URL}/api/writing/evaluate`,
+      {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ promptId: prompt!.id, text }),
+      }
+    );
+    const data: WritingFeedback = await res.json();
+    setFeedback(data);
+    setLoading(false);
+    setView("feedback");
   }
 
   function handleRestart() {
@@ -499,11 +532,10 @@ export default function WritingPage() {
     );
   }
 
-  if (view === "feedback" && feedback && prompt) {
+  if (view === "feedback" && feedback) {
     return (
       <FeedbackPanel
         feedback={feedback}
-        prompt={prompt}
         onRestart={handleRestart}
       />
     );
