@@ -2,7 +2,13 @@
 
 import { useState, useRef, useCallback } from "react";
 import { SCENARIOS, DUMMY_CONVERSATION } from "../lib/dummy-data";
-import type { Scenario, ConversationTurn, SpeakingResult, WordFeedback, CorrectionRow } from "../lib/types";
+import type {
+  Scenario,
+  ConversationTurn,
+  SpeakingResult,
+  WordFeedback,
+  CorrectionRow,
+} from "../lib/types";
 import Badge from "../components/ui/Badge";
 import Button from "../components/ui/Button";
 import ProgressBar from "../components/ui/ProgressBar";
@@ -11,14 +17,14 @@ import ProgressBar from "../components/ui/ProgressBar";
 
 function useAudioRecorder() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const chunksRef        = useRef<Blob[]>([]);
+  const chunksRef = useRef<Blob[]>([]);
 
   async function start() {
-    const stream   = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     const recorder = new MediaRecorder(stream, {
       mimeType: "audio/webm;codecs=opus",
     });
-    chunksRef.current        = [];
+    chunksRef.current = [];
     recorder.ondataavailable = (e) => chunksRef.current.push(e.data);
     recorder.start();
     mediaRecorderRef.current = recorder;
@@ -26,7 +32,7 @@ function useAudioRecorder() {
 
   function stop(): Promise<Blob> {
     return new Promise((resolve) => {
-      const recorder  = mediaRecorderRef.current!;
+      const recorder = mediaRecorderRef.current!;
       recorder.onstop = () => {
         const blob = new Blob(chunksRef.current, { type: "audio/webm" });
         resolve(blob);
@@ -52,7 +58,7 @@ function TranscriptLine({ turn }: { turn: ConversationTurn }) {
     <div className="leading-loose">
       {turn.wordFeedback.map((wf, i) => {
         const isHovered = hoveredWord === i;
-        const hasTip    = wf.suggestion || wf.reason;
+        const hasTip = wf.suggestion || wf.reason;
 
         return (
           <span key={i} className="relative inline-block mx-0.5">
@@ -61,7 +67,7 @@ function TranscriptLine({ turn }: { turn: ConversationTurn }) {
                 cursor-default transition-colors duration-150
                 ${wf.status === "correct" ? "word-correct" : ""}
                 ${wf.status === "caution" ? "word-caution" : ""}
-                ${wf.status === "error"   ? "word-error"   : ""}
+                ${wf.status === "error" ? "word-error" : ""}
               `}
               onMouseEnter={() => hasTip && setHoveredWord(i)}
               onMouseLeave={() => setHoveredWord(null)}
@@ -134,9 +140,16 @@ function ScenarioPicker({ onSelect }: { onSelect: (s: Scenario) => void }) {
             </div>
             <svg
               className="w-5 h-5 text-text-subtle group-hover:text-primary transition-colors shrink-0 mt-1"
-              fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={2}
             >
-              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M9 5l7 7-7 7"
+              />
             </svg>
           </button>
         ))}
@@ -162,38 +175,40 @@ function ConversationView({
   onRecord: () => void;
   onFinish: (result: SpeakingResult) => void;
 }) {
-  const progress     = Math.round((currentTurnIndex / (scenario.totalTurns * 2)) * 100);
+  const progress = Math.round(
+    (currentTurnIndex / (scenario.totalTurns * 2)) * 100,
+  );
   const visibleTurns = turns.slice(0, currentTurnIndex + 1);
-  const lastTurn     = visibleTurns[visibleTurns.length - 1];
-  const isAiTurn     = lastTurn?.role === "ai";
-  const isDone       = currentTurnIndex >= turns.length - 1;
+  const lastTurn = visibleTurns[visibleTurns.length - 1];
+  const isAiTurn = lastTurn?.role === "ai";
+  const isDone = currentTurnIndex >= turns.length - 1;
 
   // Build result from accumulated turn data when done
   function buildResult(): SpeakingResult {
-    const userTurns    = turns.filter((t) => t.role === "user");
-    const allFeedback  = userTurns.flatMap((t) => t.wordFeedback ?? []);
-    const errors       = allFeedback.filter((w) => w.status === "error");
-    const cautions     = allFeedback.filter((w) => w.status === "caution");
-    const wordsSpoken  = userTurns.reduce(
-      (acc, t) => acc + t.text.split(/\s+/).filter(Boolean).length, 0
+    const userTurns = turns.filter((t) => t.role === "user");
+    const allFeedback = userTurns.flatMap((t) => t.wordFeedback ?? []);
+    const errors = allFeedback.filter((w) => w.status === "error");
+    const cautions = allFeedback.filter((w) => w.status === "caution");
+    const wordsSpoken = userTurns.reduce(
+      (acc, t) => acc + t.text.split(/\s+/).filter(Boolean).length,
+      0,
     );
 
     return {
-      scenarioId:     scenario.id,
+      scenarioId: scenario.id,
       turnsCompleted: scenario.totalTurns,
-      totalTurns:     scenario.totalTurns,
+      totalTurns: scenario.totalTurns,
       wordsSpoken,
-      errorsFound:    errors.length + cautions.length,
+      errorsFound: errors.length + cautions.length,
       errorBreakdown: { grammar: errors.length, style: cautions.length },
-      toneScore:      4,           // TODO: replace with real API toneScore field
-      topInsights:    [],          // TODO: replace with real API topInsights field
-      corrections:    [],          // TODO: replace with real API corrections field
+      toneScore: 4, // TODO: replace with real API toneScore field
+      topInsights: [], // TODO: replace with real API topInsights field
+      corrections: [], // TODO: replace with real API corrections field
     };
   }
 
   return (
     <div className="fl-container py-8 animate-fade-in">
-
       {/* Header row */}
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
@@ -203,14 +218,22 @@ function ConversationView({
               {scenario.title}
             </h2>
             <p className="text-xs text-text-subtle">
-              Turn {Math.ceil((currentTurnIndex + 1) / 2)} of {scenario.totalTurns}
+              Turn {Math.ceil((currentTurnIndex + 1) / 2)} of{" "}
+              {scenario.totalTurns}
             </p>
           </div>
         </div>
-        <Badge variant="primary" dot>Live</Badge>
+        <Badge variant="primary" dot>
+          Live
+        </Badge>
       </div>
 
-      <ProgressBar value={progress} variant="primary" size="sm" className="mb-8" />
+      <ProgressBar
+        value={progress}
+        variant="primary"
+        size="sm"
+        className="mb-8"
+      />
 
       {/* Conversation thread */}
       <div className="flex flex-col gap-4 mb-8">
@@ -221,21 +244,29 @@ function ConversationView({
               turn.role === "user" ? "flex-row-reverse" : ""
             }`}
           >
-            <div className={`
+            <div
+              className={`
               w-8 h-8 rounded-full shrink-0 flex items-center justify-center text-sm
-              ${turn.role === "ai"
-                ? "bg-primary/20 text-primary"
-                : "bg-accent/20 text-accent"}
-            `}>
+              ${
+                turn.role === "ai"
+                  ? "bg-primary/20 text-primary"
+                  : "bg-accent/20 text-accent"
+              }
+            `}
+            >
               {turn.role === "ai" ? "🤖" : "🙂"}
             </div>
 
-            <div className={`
+            <div
+              className={`
               max-w-[78%] fl-card px-4 py-3
-              ${turn.role === "ai"
-                ? "border-border/60"
-                : "border-accent/20 bg-accent/5"}
-            `}>
+              ${
+                turn.role === "ai"
+                  ? "border-border/60"
+                  : "border-accent/20 bg-accent/5"
+              }
+            `}
+            >
               <TranscriptLine turn={turn} />
               {turn.role === "ai" && turn.hint && (
                 <p className="mt-2 pt-2 border-t border-border/40 text-xs text-text-subtle italic">
@@ -252,7 +283,9 @@ function ConversationView({
         <div className="fl-card p-5 border-primary/20 bg-primary/5 text-center">
           {isAiTurn ? (
             <div className="flex flex-col items-center gap-3">
-              <p className="text-sm text-text-muted">Your turn — press to respond</p>
+              <p className="text-sm text-text-muted">
+                Your turn — press to respond
+              </p>
 
               <div className="relative w-16 h-16">
                 {isRecording && <span className="record-ring" />}
@@ -261,11 +294,15 @@ function ConversationView({
                   className={`
                     w-16 h-16 rounded-full flex items-center justify-center text-2xl
                     transition-all duration-200 shadow-card
-                    ${isRecording
-                      ? "bg-error text-white scale-110"
-                      : "bg-primary/20 hover:bg-primary/30 text-primary"}
+                    ${
+                      isRecording
+                        ? "bg-error text-white scale-110"
+                        : "bg-primary/20 hover:bg-primary/30 text-primary"
+                    }
                   `}
-                  aria-label={isRecording ? "Stop recording" : "Start recording"}
+                  aria-label={
+                    isRecording ? "Stop recording" : "Start recording"
+                  }
                 >
                   {isRecording ? "⏹" : "🎙️"}
                 </button>
@@ -277,7 +314,9 @@ function ConversationView({
             </div>
           ) : (
             <div className="flex flex-col items-center gap-2">
-              <p className="text-sm text-text-muted">Waiting for AI response…</p>
+              <p className="text-sm text-text-muted">
+                Waiting for AI response…
+              </p>
               <div className="flex gap-1">
                 {[0, 1, 2].map((i) => (
                   <span
@@ -314,7 +353,7 @@ function ResultsPanel({
   onRestart: () => void;
 }) {
   const [saving, setSaving] = useState(false);
-  const [saved,  setSaved]  = useState(false);
+  const [saved, setSaved] = useState(false);
 
   const toneStars = Array.from({ length: 5 }, (_, i) => i < result.toneScore);
 
@@ -322,9 +361,9 @@ function ResultsPanel({
     setSaving(true);
     // API: POST /api/session/save — body: { speakingResult: result }
     await fetch(`${import.meta.env.VITE_API_URL}/api/session/save`, {
-      method:  "POST",
+      method: "POST",
       headers: { "Content-Type": "application/json" },
-      body:    JSON.stringify({ speakingResult: result }),
+      body: JSON.stringify({ speakingResult: result }),
     });
     setSaving(false);
     setSaved(true);
@@ -344,13 +383,31 @@ function ResultsPanel({
       {/* Score cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-8">
         {[
-          { label: "Words spoken",     value: result.wordsSpoken,              color: "text-primary" },
-          { label: "Errors found",     value: result.errorsFound,              color: "text-error"   },
-          { label: "Grammar errors",   value: result.errorBreakdown.grammar,   color: "text-caution" },
-          { label: "Style suggestions",value: result.errorBreakdown.style,     color: "text-accent"  },
+          {
+            label: "Words spoken",
+            value: result.wordsSpoken,
+            color: "text-primary",
+          },
+          {
+            label: "Errors found",
+            value: result.errorsFound,
+            color: "text-error",
+          },
+          {
+            label: "Grammar errors",
+            value: result.errorBreakdown.grammar,
+            color: "text-caution",
+          },
+          {
+            label: "Style suggestions",
+            value: result.errorBreakdown.style,
+            color: "text-accent",
+          },
         ].map((stat) => (
           <div key={stat.label} className="fl-card p-4 text-center">
-            <div className={`font-display font-bold text-3xl ${stat.color} mb-1`}>
+            <div
+              className={`font-display font-bold text-3xl ${stat.color} mb-1`}
+            >
               {stat.value}
             </div>
             <div className="text-xs text-text-subtle">{stat.label}</div>
@@ -364,11 +421,16 @@ function ResultsPanel({
           <p className="text-sm font-medium text-text-primary mb-0.5">
             Tone & politeness
           </p>
-          <p className="text-xs text-text-muted">How natural and polite you sounded</p>
+          <p className="text-xs text-text-muted">
+            How natural and polite you sounded
+          </p>
         </div>
         <div className="flex gap-1">
           {toneStars.map((filled, i) => (
-            <span key={i} className={`text-lg ${filled ? "text-accent" : "text-border"}`}>
+            <span
+              key={i}
+              className={`text-lg ${filled ? "text-accent" : "text-border"}`}
+            >
               ★
             </span>
           ))}
@@ -383,7 +445,10 @@ function ResultsPanel({
           </p>
           <ul className="flex flex-col gap-2">
             {result.topInsights.map((insight, i) => (
-              <li key={i} className="flex items-start gap-2 text-sm text-text-muted">
+              <li
+                key={i}
+                className="flex items-start gap-2 text-sm text-text-muted"
+              >
                 <span className="text-primary mt-0.5 shrink-0">→</span>
                 {insight}
               </li>
@@ -402,14 +467,23 @@ function ResultsPanel({
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border/60">
-                  <th className="text-left pb-2 text-xs text-text-subtle font-medium pr-4">You said</th>
-                  <th className="text-left pb-2 text-xs text-text-subtle font-medium pr-4">Better option</th>
-                  <th className="text-left pb-2 text-xs text-text-subtle font-medium">Why</th>
+                  <th className="text-left pb-2 text-xs text-text-subtle font-medium pr-4">
+                    You said
+                  </th>
+                  <th className="text-left pb-2 text-xs text-text-subtle font-medium pr-4">
+                    Better option
+                  </th>
+                  <th className="text-left pb-2 text-xs text-text-subtle font-medium">
+                    Why
+                  </th>
                 </tr>
               </thead>
               <tbody>
                 {result.corrections.map((row, i) => (
-                  <tr key={i} className="border-b border-border/40 last:border-0">
+                  <tr
+                    key={i}
+                    className="border-b border-border/40 last:border-0"
+                  >
                     <td className="py-3 pr-4">
                       <span className="fl-pill bg-error/10 text-error border border-error/20 text-xs">
                         {row.original}
@@ -420,7 +494,9 @@ function ResultsPanel({
                         {row.better}
                       </span>
                     </td>
-                    <td className="py-3 text-text-muted text-xs leading-snug">{row.why}</td>
+                    <td className="py-3 text-text-muted text-xs leading-snug">
+                      {row.why}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -454,18 +530,20 @@ function ResultsPanel({
 type View = "picker" | "conversation" | "results";
 
 export default function SpeakingPage() {
-  const [view,          setView]          = useState<View>("picker");
-  const [scenario,      setScenario]      = useState<Scenario | null>(null);
-  const [turns,         setTurns]         = useState<ConversationTurn[]>([]);
-  const [turnIndex,     setTurnIndex]     = useState(0);
-  const [isRecording,   setIsRecording]   = useState(false);
-  const [speakingResult, setSpeakingResult] = useState<SpeakingResult | null>(null);
+  const [view, setView] = useState<View>("picker");
+  const [scenario, setScenario] = useState<Scenario | null>(null);
+  const [turns, setTurns] = useState<ConversationTurn[]>([]);
+  const [turnIndex, setTurnIndex] = useState(0);
+  const [isRecording, setIsRecording] = useState(false);
+  const [speakingResult, setSpeakingResult] = useState<SpeakingResult | null>(
+    null,
+  );
 
   const audioRecorder = useAudioRecorder();
 
   function handleSelectScenario(s: Scenario) {
     setScenario(s);
-    setTurns(DUMMY_CONVERSATION);   // TODO: fetch scenario turns from API if needed
+    setTurns(DUMMY_CONVERSATION); // TODO: fetch scenario turns from API if needed
     setTurnIndex(0);
     setView("conversation");
   }
@@ -478,35 +556,52 @@ export default function SpeakingPage() {
       setIsRecording(false);
       const blob = await audioRecorder.stop();
       const form = new FormData();
-      form.append("audio",      blob, "turn.webm");
+      form.append("audio", blob, "turn.webm");
       form.append("scenarioId", scenario!.id);
-      form.append("turnIndex",  String(turnIndex));
+      form.append("turnIndex", String(turnIndex));
 
       // API: POST /api/speech/transcribe
       // Response: { transcript, word_feedback[], ai_reply_text, corrections[] }
-      const res  = await fetch(
+      const res = await fetch(
         `${import.meta.env.VITE_API_URL}/api/speech/transcribe`,
-        { method: "POST", body: form }
+        { method: "POST", body: form },
       );
       const data = await res.json();
 
-      // Update the current user turn with real word feedback from API
+      // turnIndex = current AI turn (e.g. index 0)
+      // turnIndex + 1 = the user turn  → update with real transcript + word_feedback
+      // turnIndex + 2 = the next AI turn → update with ai_reply_text from API
       setTurns((prev) =>
-        prev.map((t, i) =>
-          i === turnIndex
-            ? { ...t, text: data.transcript, wordFeedback: data.word_feedback }
-            : t
-        )
+        prev.map((t, i) => {
+          if (i === turnIndex + 1) {
+            // User turn: replace dummy text with real transcript + colour-coded feedback
+            return {
+              ...t,
+              text: data.transcript,
+              wordFeedback: data.word_feedback,
+            };
+          }
+          if (i === turnIndex + 2 && data.ai_reply_text) {
+            // Next AI turn: replace dummy text with real AI reply
+            return { ...t, text: data.ai_reply_text };
+          }
+          return t;
+        }),
       );
 
-      setTurnIndex((prev) => Math.min(prev + 1, turns.length - 1));
+      // Advance by 2: skip past the user turn we just filled AND the next AI turn
+      // This lands back on an AI turn so isAiTurn=true and the record button shows again
+      // On the final recording Math.min clamps to turns.length - 1 (last user turn) → isDone=true
+      setTurnIndex((prev) => Math.min(prev + 2, turns.length - 1));
 
       // Speak AI reply via browser Web Speech API — free, no API key
-      window.speechSynthesis.cancel();
-      const utt  = new SpeechSynthesisUtterance(data.ai_reply_text);
-      utt.lang   = "en-GB";
-      utt.rate   = 0.9;
-      window.speechSynthesis.speak(utt);
+      if (data.ai_reply_text) {
+        window.speechSynthesis.cancel();
+        const utt = new SpeechSynthesisUtterance(data.ai_reply_text);
+        utt.lang = "en-GB";
+        utt.rate = 0.9;
+        window.speechSynthesis.speak(utt);
+      }
     }
   }
 
@@ -542,12 +637,7 @@ export default function SpeakingPage() {
   }
 
   if (view === "results" && speakingResult) {
-    return (
-      <ResultsPanel
-        result={speakingResult}
-        onRestart={handleRestart}
-      />
-    );
+    return <ResultsPanel result={speakingResult} onRestart={handleRestart} />;
   }
 
   return null;

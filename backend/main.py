@@ -99,6 +99,23 @@ def health():
     """
     return {"status": "ok", "version": "0.1.0"}
 
+# ── User progress ──────────────────────────────────────────────────────────
+# Stub endpoint — returns zeros until session saving (POST /api/session/save)
+# and a user/session store are implemented.
+# TODO: replace with real streak + session count from database or Redis.
+
+@app.get("/api/user/progress", tags=["User"])
+def user_progress():
+    """
+    GET /api/user/progress
+    Returns the user's current streak and session count.
+    Currently stubbed — returns zeros until persistence is built.
+    """
+    return {
+        "streak":             0,
+        "sessions_completed": 0,
+        "level":              "everyday",
+    }
 
 # ── Dev entrypoint ───────────────────────────────────────────────────────────
 # Run locally with:

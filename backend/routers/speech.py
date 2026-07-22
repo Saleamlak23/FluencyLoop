@@ -1,121 +1,217 @@
+# backend/routers/speech.py
+
 import os
+import json
 import tempfile
-from fastapi import APIRouter, UploadFile, File, HTTPException, Request, Depends
-from services.ai_client import get_groq_client, GROQ_STT_MODEL
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Request, Depends
+from services.ai_client import get_groq_client, GROQ_STT_MODEL, GROQ_CHAT_MODEL
 from services.rate_limiter import check_rate_limit
 
 router = APIRouter()
 
-ALLOWED_CONTENT_TYPES = {
+ALLOWED_PREFIXES = (
     "audio/webm",
     "audio/ogg",
     "audio/mpeg",
     "audio/wav",
     "audio/mp4",
+    "video/webm",   # some browsers label MediaRecorder output as video/webm
+)
+
+# ── Scenario metadata ─────────────────────────────────────────────────────
+# Mirrors the frontend SCENARIOS list — used to build the AI system prompt.
+
+SCENARIO_META = {
+    "ordering-coffee": {
+        "role":        "a friendly barista at a busy London coffee shop called The Daily Grind",
+        "description": "The student is ordering a coffee drink at a coffee shop.",
+    },
+    "asking-directions": {
+        "role":        "a helpful local pedestrian on a busy city street",
+        "description": "The student is lost and asking for directions to the nearest train station.",
+    },
+    "job-interview": {
+        "role":        "a friendly company receptionist",
+        "description": "The student has arrived early for a job interview and is making small talk while waiting.",
+    },
 }
+
+# ── System prompt ─────────────────────────────────────────────────────────
+
+SPEAKING_SYSTEM_PROMPT = """
+You are a friendly English language tutor playing the role of {role}.
+
+The student just said: "{transcript}"
+
+Scenario context: {description}
+
+Your job:
+1. Stay in character and reply naturally (1-2 sentences max).
+2. Analyse every word in the student's sentence for grammar, vocabulary, and naturalness.
+3. Flag words as: "correct" (natural and accurate), "caution" (understood but unnatural), or "error" (grammatically wrong).
+
+Respond with ONLY valid JSON in this exact format — no text, no markdown outside the JSON:
+{{
+  "character_reply": "<your natural in-character response to the student>",
+  "word_feedback": [
+    {{
+      "word":       "<each word from the student's sentence, one entry per word>",
+      "status":     "correct" | "caution" | "error",
+      "suggestion": "<better alternative if caution or error, otherwise null>",
+      "reason":     "<one short explanation if caution or error, otherwise null>"
+    }}
+  ],
+  "corrections": [
+    {{
+      "original": "<word or phrase the student used>",
+      "better":   "<more natural or correct alternative>",
+      "why":      "<one clear sentence explaining why>"
+    }}
+  ]
+}}
+
+Important rules:
+- word_feedback MUST include EVERY word from the student's sentence — do not skip any.
+- Only add entries to corrections[] for words marked caution or error.
+- Keep character_reply warm, short, and in character.
+- Return pure JSON only — no preamble, no explanation outside the JSON object.
+"""
+
+
+def _ext_from_content_type(content_type: str) -> str:
+    """Map MIME content-type to a file extension Groq Whisper accepts."""
+    if "ogg"  in content_type: return ".ogg"
+    if "mp4"  in content_type: return ".mp4"
+    if "wav"  in content_type: return ".wav"
+    if "mpeg" in content_type or "mp3" in content_type: return ".mp3"
+    return ".webm"   # covers audio/webm and video/webm
 
 
 @router.post("/transcribe")
 async def transcribe(
-    request: Request,
-    audio: UploadFile = File(...),
+    request:    Request,
+    audio:      UploadFile = File(...),
+    scenarioId: str        = Form(default="ordering-coffee"),
+    turnIndex:  int        = Form(default=0),
     _=Depends(check_rate_limit),
 ):
     """
-    Transcribe an audio file using Groq Whisper Large v3 Turbo.
+    Full speaking turn pipeline:
+      1. Transcribe audio  → Groq Whisper Large v3 Turbo  (free: 2,000 req/day)
+      2. Get AI reply      → Groq Llama 3.3 70B           (free: 1,000 req/day)
 
-    Free tier limits:
-      - 2,000 requests/day
-      - 7,200 audio seconds/hour
-      - 25 MB max file size
+    POST /api/speech/transcribe
+    Body (multipart/form-data):
+      audio      — audio blob (webm/ogg/wav/mp4/mp3)
+      scenarioId — string matching a key in SCENARIO_META
+      turnIndex  — integer (which turn in the conversation)
 
-    Accepts: audio/webm (MediaRecorder default), audio/ogg, audio/wav, audio/mpeg
-    Returns: { text: str, words: list }
-
-    Called by the frontend after the user stops recording:
-      POST /api/speech/transcribe
-      Body: FormData { audio: Blob }
+    Response:
+      {
+        transcript:    string,
+        word_feedback: [{ word, status, suggestion, reason }],
+        ai_reply_text: string,
+        corrections:   [{ original, better, why }]
+      }
     """
-    if audio.content_type not in ALLOWED_CONTENT_TYPES:
+    content_type = audio.content_type or ""
+
+    # ── Validate content type ──────────────────────────────────────────────
+    if not any(content_type.startswith(p) for p in ALLOWED_PREFIXES):
         raise HTTPException(
             status_code=400,
-            detail=f"Unsupported audio format: {audio.content_type}. "
-                   f"Accepted formats: {', '.join(ALLOWED_CONTENT_TYPES)}",
+            detail=(
+                f"Unsupported audio format: '{content_type}'. "
+                f"Accepted: {', '.join(ALLOWED_PREFIXES)}"
+            ),
         )
 
-    # Read the uploaded audio into a temp file
-    # Groq SDK requires a real file path, not an in-memory buffer
-    with tempfile.NamedTemporaryFile(suffix=".webm", delete=False) as tmp:
-        contents = await audio.read()
-        if len(contents) == 0:
-            raise HTTPException(status_code=400, detail="Audio file is empty.")
-        tmp.write(contents)
-        tmp_path = tmp.name
+    contents = await audio.read()
+    if len(contents) == 0:
+        raise HTTPException(status_code=400, detail="Audio file is empty.")
+
+    ext      = _ext_from_content_type(content_type)
+    tmp_path = None
 
     try:
+        # ── Write to temp file ─────────────────────────────────────────────
+        with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
+            tmp.write(contents)
+            tmp_path = tmp.name
+
         client = get_groq_client()
+
+        # ── Step 1: Transcribe with Groq Whisper ───────────────────────────
         with open(tmp_path, "rb") as f:
-            result = client.audio.transcriptions.create(
+            stt_result = client.audio.transcriptions.create(
                 file=(os.path.basename(tmp_path), f.read()),
-                model=GROQ_STT_MODEL,
+                model=GROQ_STT_MODEL,        # whisper-large-v3-turbo
                 language="en",
-                response_format="verbose_json",
-                timestamp_granularities=["word"],
+                response_format="text",      # plain string — Groq doesn't support verbose_json word timestamps
             )
 
-        # verbose_json returns .text and .words (word-level timestamps)
-        words = result.words if hasattr(result, "words") and result.words else []
+        # response_format="text" returns the string directly
+        transcript = (stt_result if isinstance(stt_result, str) else stt_result.text).strip()
+
+        if not transcript:
+            raise HTTPException(
+                status_code=400,
+                detail="Could not understand the audio. Please speak clearly and try again.",
+            )
+
+        print(f"[transcribe] ✅ STT done — scenarioId={scenarioId}, turn={turnIndex}, text='{transcript}'")
+
+        # ── Step 2: AI reply + word feedback via Groq Llama 3.3 70B ───────
+        scenario = SCENARIO_META.get(scenarioId, SCENARIO_META["ordering-coffee"])
+        prompt   = SPEAKING_SYSTEM_PROMPT.format(
+            role=scenario["role"],
+            transcript=transcript,
+            description=scenario["description"],
+        )
+
+        chat_result = client.chat.completions.create(
+            model=GROQ_CHAT_MODEL,           # llama-3.3-70b-versatile
+            messages=[{"role": "user", "content": prompt}],
+            response_format={"type": "json_object"},
+            temperature=0.5,
+            max_tokens=1000,
+        )
+
+        raw    = chat_result.choices[0].message.content
+        parsed = json.loads(raw)
+
+        print(f"[transcribe] ✅ LLM done — reply='{parsed.get('character_reply', '')[:60]}...'")
 
         return {
-            "text": result.text.strip(),
-            "words": [
-                {
-                    "word":  w.word,
-                    "start": w.start,
-                    "end":   w.end,
-                }
-                for w in words
-            ],
+            "transcript":    transcript,
+            "word_feedback": parsed.get("word_feedback", []),
+            "ai_reply_text": parsed.get("character_reply", ""),
+            "corrections":   parsed.get("corrections", []),
         }
 
     except HTTPException:
         raise
+
+    except json.JSONDecodeError as e:
+        print(f"[transcribe] ❌ JSON parse error: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="AI returned malformed JSON. Please try again.",
+        )
+
     except Exception as e:
         error_msg = str(e)
+        print(f"[transcribe] ❌ ERROR — scenarioId={scenarioId}, turn={turnIndex}: {error_msg}")
         if "429" in error_msg:
             raise HTTPException(
                 status_code=429,
-                detail="Groq Whisper rate limit reached (2,000 req/day). Try again tomorrow.",
+                detail="Rate limit reached (2,000 req/day on free tier). Please try again tomorrow.",
             )
         raise HTTPException(
             status_code=500,
             detail=f"Transcription failed: {error_msg}",
         )
+
     finally:
-        # Always clean up the temp file
-        if os.path.exists(tmp_path):
+        if tmp_path and os.path.exists(tmp_path):
             os.unlink(tmp_path)
-
-
-# ── TTS NOTE ────────────────────────────────────────────────────────────────
-# The MVP uses the Browser Web Speech API (SpeechSynthesisUtterance) for TTS.
-# The backend returns text only; the frontend speaks it client-side for free.
-#
-# Upgrade path when budget is available:
-#   Groq Orpheus V1 English — $22 per million characters (PAID).
-#   Uncomment the endpoint below and update the frontend to call /api/speech/speak.
-#
-# @router.post("/speak")
-# async def speak(payload: dict, _=Depends(check_rate_limit)):
-#     """PAID: Groq Orpheus V1 English TTS — $22/M chars. Enable when budget allows."""
-#     from fastapi.responses import Response
-#     text  = payload.get("text", "")[:1000]
-#     voice = payload.get("voice", "luna")
-#     client = get_groq_client()
-#     response = client.audio.speech.create(
-#         model="canopylabs/orpheus-v1-english",
-#         voice=voice,
-#         input=text,
-#         response_format="wav",
-#     )
-#     return Response(content=response.content, media_type="audio/wav")
