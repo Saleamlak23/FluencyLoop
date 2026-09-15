@@ -47,8 +47,9 @@ Scenario context: {description}
 
 Your job:
 1. Stay in character and reply naturally (1-2 sentences max).
-2. Analyse every word in the student's sentence for grammar, vocabulary, and naturalness.
-3. Flag words as: "correct" (natural and accurate), "caution" (understood but unnatural), or "error" (grammatically wrong).
+2. Analyse the complete sentence and every word for grammar, vocabulary, and naturalness.
+3. Check grammar rules including subject-verb agreement, verb tense and form, sentence structure, word order, articles, prepositions, plurals, pronouns, and countable/uncountable nouns.
+4. Flag words as: "correct" (grammatically correct, natural, and accurate), "caution" (grammatically acceptable but less natural or precise), or "error" (grammatically wrong, missing, or incorrectly used).
 
 Respond with ONLY valid JSON in this exact format — no text, no markdown outside the JSON:
 {{
@@ -72,6 +73,9 @@ Respond with ONLY valid JSON in this exact format — no text, no markdown outsi
 
 Important rules:
 - word_feedback MUST include EVERY word from the student's sentence — do not skip any.
+- Judge grammar in the context of the complete sentence, not each word in isolation.
+- If a grammar rule is broken, mark the affected word or words as "error" even when the meaning is understandable.
+- Do not mark a word "correct" merely because it is a valid English word; verify its role and form in the sentence.
 - Only add entries to corrections[] for words marked caution or error.
 - Keep character_reply warm, short, and in character.
 - Return pure JSON only — no preamble, no explanation outside the JSON object.

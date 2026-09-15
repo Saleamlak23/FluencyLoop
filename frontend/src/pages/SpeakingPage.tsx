@@ -96,6 +96,24 @@ function TranscriptLine({ turn }: { turn: ConversationTurn }) {
   );
 }
 
+function FeedbackLegend() {
+  return (
+    <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-text-subtle">
+      <span className="text-correct">Green: correct</span>
+      <span className="text-caution">Yellow: improve</span>
+      <span className="text-error">Red: incorrect</span>
+    </div>
+  );
+}
+
+function buildSuggestedResponse(
+  feedback: ConversationTurn["wordFeedback"],
+) {
+  return (feedback ?? [])
+    .map((word) => word.suggestion ?? word.word)
+    .join(" ");
+}
+
 // ── Scenario picker ───────────────────────────────────────────────────────
 
 function ScenarioPicker({ onSelect }: { onSelect: (s: Scenario) => void }) {
@@ -164,6 +182,8 @@ function ConversationView({
   currentTurnIndex,
   isRecording,
   attemptCount,
+  correctedResponse,
+  correctedTurnId,
   error,
   onRecord,
   onFinish,
@@ -173,6 +193,8 @@ function ConversationView({
   currentTurnIndex: number;
   isRecording: boolean;
   attemptCount: number;
+  correctedResponse: string | null;
+  correctedTurnId: string | null;
   error: string | null;
   onRecord: () => void;
   onFinish: (result: SpeakingResult) => void;
@@ -239,14 +261,14 @@ function ConversationView({
       />
 
       {error && (
-        <div className="mb-5 flex flex-col gap-3 rounded-lg border border-error/30 bg-error/10 px-4 py-3 text-sm text-error sm:flex-row sm:items-center sm:justify-between">
-          <p>{error}</p>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={onRecord}
-            className="shrink-0"
-          >
+        <div
+          className="fixed inset-x-4 top-20 z-50 mx-auto flex max-w-xl items-center gap-3 rounded-lg border border-error/40 bg-surface px-4 py-3 text-sm text-error shadow-card animate-slide-up"
+          role="alert"
+          aria-live="assertive"
+        >
+          <span className="text-lg" aria-hidden="true">!</span>
+          <p className="flex-1">{error}</p>
+          <Button variant="secondary" size="sm" onClick={onRecord}>
             Try again
           </Button>
         </div>
@@ -285,6 +307,23 @@ function ConversationView({
             `}
             >
               <TranscriptLine turn={turn} />
+              {turn.role === "user" && turn.wordFeedback && (
+                <>
+                  <FeedbackLegend />
+                  {turn.id === turns[currentTurnIndex]?.id && attemptCount > 0 && (
+                    <p className="mt-3 border-t border-border/40 pt-2 text-xs text-text-muted">
+                      {attemptCount === 1
+                        ? "Hint: review the yellow and red words, then try the sentence again."
+                        : `Hint: try saying “${buildSuggestedResponse(turn.wordFeedback)}”.`}
+                    </p>
+                  )}
+                  {turn.id === correctedTurnId && correctedResponse && (
+                    <p className="mt-3 border-t border-correct/30 pt-2 text-xs text-correct">
+                      Correct response: “{correctedResponse}”
+                    </p>
+                  )}
+                </>
+              )}
               {turn.role === "ai" && turn.hint && (
                 <p className="mt-2 pt-2 border-t border-border/40 text-xs text-text-subtle italic">
                   💡 {turn.hint}
@@ -578,6 +617,10 @@ export default function SpeakingPage() {
   const [turnIndex, setTurnIndex] = useState(0);
   const [isRecording, setIsRecording] = useState(false);
   const [attemptCount, setAttemptCount] = useState(0);
+  const [correctedResponse, setCorrectedResponse] = useState<string | null>(
+    null,
+  );
+  const [correctedTurnId, setCorrectedTurnId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [speakingResult, setSpeakingResult] = useState<SpeakingResult | null>(
     null,
@@ -591,6 +634,8 @@ export default function SpeakingPage() {
     setTurns(DUMMY_CONVERSATION); // TODO: fetch scenario turns from API if needed
     setTurnIndex(0);
     setAttemptCount(0);
+    setCorrectedResponse(null);
+    setCorrectedTurnId(null);
     setView("conversation");
   }
 
@@ -623,10 +668,15 @@ export default function SpeakingPage() {
           throw new Error(data.detail ?? "Speaking practice is unavailable.");
         }
 
+        const feedback = Array.isArray(data.word_feedback)
+          ? data.word_feedback
+          : [];
+        const isAllGreen =
+          feedback.length > 0 &&
+          feedback.every(
+            (word: { status: string }) => word.status === "correct",
+          );
         const nextAttempt = attemptCount + 1;
-        const hasIncorrectFeedback = (data.word_feedback ?? []).some(
-          (feedback: { status: string }) => feedback.status !== "correct",
-        );
 
         setTurns((prev) =>
           prev.map((t, i) => {
@@ -644,12 +694,19 @@ export default function SpeakingPage() {
           }),
         );
 
-        if (hasIncorrectFeedback && nextAttempt < 3) {
+        if (!isAllGreen && nextAttempt < 3) {
           setAttemptCount(nextAttempt);
           setTurnIndex(responseTurnIndex + 1);
           return;
         }
 
+        if (!isAllGreen) {
+          setCorrectedResponse(buildSuggestedResponse(feedback));
+          setCorrectedTurnId(turns[responseTurnIndex + 1]?.id ?? null);
+        } else {
+          setCorrectedResponse(null);
+          setCorrectedTurnId(null);
+        }
         setAttemptCount(0);
         setTurnIndex(Math.min(responseTurnIndex + 2, turns.length - 1));
 
@@ -678,6 +735,8 @@ export default function SpeakingPage() {
     setTurnIndex(0);
     setIsRecording(false);
     setAttemptCount(0);
+    setCorrectedResponse(null);
+    setCorrectedTurnId(null);
     setError(null);
     setSpeakingResult(null);
     setView("picker");
@@ -695,6 +754,8 @@ export default function SpeakingPage() {
         currentTurnIndex={turnIndex}
         isRecording={isRecording}
         attemptCount={attemptCount}
+        correctedResponse={correctedResponse}
+        correctedTurnId={correctedTurnId}
         error={error}
         onRecord={handleRecord}
         onFinish={handleFinish}
