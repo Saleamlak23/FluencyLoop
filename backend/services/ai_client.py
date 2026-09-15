@@ -6,7 +6,7 @@ from openai import OpenAI
 
 # ── Model constants ─────────────────────────────────────────────────────────
 
-GROQ_CHAT_MODEL = "llama-3.3-70b-versatile"   # free: 1,000 RPD, 30 RPM
+GROQ_CHAT_MODEL = "openai/gpt-oss-20b"
 GROQ_FAST_MODEL = "llama-3.1-8b-instant"       # free: 14,400 RPD, 30 RPM
 GROQ_STT_MODEL  = "whisper-large-v3-turbo"     # free: 2,000 req/day
 GEMINI_MODEL    = "gemini-2.5-flash"           # fallback 1: 1,500 RPD free
@@ -18,7 +18,7 @@ MISTRAL_MODEL   = "mistral-large-latest"       # fallback 2: ~1B tokens/month fr
 def get_groq_client() -> Groq:
     """
     Primary provider — Groq free tier.
-    Covers STT (Whisper Large v3 Turbo) and chat (Llama 3.3 70B / 3.1 8B).
+    Covers STT (Whisper Large v3 Turbo) and chat (GPT OSS 20B).
     TTS is handled client-side via Browser Web Speech API (no key needed).
     Sign up at console.groq.com — no credit card required.
     """

@@ -98,7 +98,7 @@ async def transcribe(
     """
     Full speaking turn pipeline:
       1. Transcribe audio  → Groq Whisper Large v3 Turbo  (free: 2,000 req/day)
-      2. Get AI reply      → Groq Llama 3.3 70B           (free: 1,000 req/day)
+    2. Get AI reply      → Groq GPT OSS 20B
 
     POST /api/speech/transcribe
     Body (multipart/form-data):
@@ -161,7 +161,7 @@ async def transcribe(
 
         print(f"[transcribe] ✅ STT done — scenarioId={scenarioId}, turn={turnIndex}, text='{transcript}'")
 
-        # ── Step 2: AI reply + word feedback via Groq Llama 3.3 70B ───────
+        # ── Step 2: AI reply + word feedback via Groq GPT OSS 20B ─────────
         scenario = SCENARIO_META.get(scenarioId, SCENARIO_META["ordering-coffee"])
         prompt   = SPEAKING_SYSTEM_PROMPT.format(
             role=scenario["role"],
@@ -170,7 +170,7 @@ async def transcribe(
         )
 
         chat_result = client.chat.completions.create(
-            model=GROQ_CHAT_MODEL,           # llama-3.3-70b-versatile
+            model=GROQ_CHAT_MODEL,           # openai/gpt-oss-20b
             messages=[{"role": "user", "content": prompt}],
             response_format={"type": "json_object"},
             temperature=0.5,
