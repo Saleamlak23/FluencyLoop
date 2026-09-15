@@ -236,9 +236,17 @@ function ConversationView({
       />
 
       {error && (
-        <p className="mb-5 rounded-lg border border-error/30 bg-error/10 px-4 py-3 text-sm text-error">
-          {error}
-        </p>
+        <div className="mb-5 flex flex-col gap-3 rounded-lg border border-error/30 bg-error/10 px-4 py-3 text-sm text-error sm:flex-row sm:items-center sm:justify-between">
+          <p>{error}</p>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={onRecord}
+            className="shrink-0"
+          >
+            Try again
+          </Button>
+        </div>
       )}
 
       {/* Conversation thread */}
@@ -628,11 +636,8 @@ export default function SpeakingPage() {
           window.speechSynthesis.speak(utt);
         }
       } catch (requestError) {
-        setError(
-          requestError instanceof Error
-            ? requestError.message
-            : "Speaking practice is unavailable. Please try again.",
-        );
+        console.error("Speaking transcription failed:", requestError);
+        setError("We couldn't process your recording. Please try again.");
       }
     }
   }
