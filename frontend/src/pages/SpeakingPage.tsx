@@ -1,13 +1,11 @@
 // src/pages/SpeakingPage.tsx
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef } from "react";
 import { SCENARIOS, DUMMY_CONVERSATION } from "../lib/dummy-data";
 import type {
   Scenario,
   ConversationTurn,
   SpeakingResult,
-  WordFeedback,
-  CorrectionRow,
 } from "../lib/types";
 import Badge from "../components/ui/Badge";
 import Button from "../components/ui/Button";
@@ -165,6 +163,7 @@ function ConversationView({
   turns,
   currentTurnIndex,
   isRecording,
+  error,
   onRecord,
   onFinish,
 }: {
@@ -172,6 +171,7 @@ function ConversationView({
   turns: ConversationTurn[];
   currentTurnIndex: number;
   isRecording: boolean;
+  error: string | null;
   onRecord: () => void;
   onFinish: (result: SpeakingResult) => void;
 }) {
@@ -234,6 +234,12 @@ function ConversationView({
         size="sm"
         className="mb-8"
       />
+
+      {error && (
+        <p className="mb-5 rounded-lg border border-error/30 bg-error/10 px-4 py-3 text-sm text-error">
+          {error}
+        </p>
+      )}
 
       {/* Conversation thread */}
       <div className="flex flex-col gap-4 mb-8">
@@ -354,19 +360,35 @@ function ResultsPanel({
 }) {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const toneStars = Array.from({ length: 5 }, (_, i) => i < result.toneScore);
 
   async function handleSave() {
     setSaving(true);
-    // API: POST /api/session/save — body: { speakingResult: result }
-    await fetch(`${import.meta.env.VITE_API_URL}/api/session/save`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ speakingResult: result }),
-    });
-    setSaving(false);
-    setSaved(true);
+    setSaveError(null);
+    try {
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL}/api/session/save`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ speakingResult: result }),
+        },
+      );
+      if (!response.ok) {
+        throw new Error("Could not save your session. Please try again.");
+      }
+      setSaved(true);
+    } catch (error) {
+      setSaveError(
+        error instanceof Error
+          ? error.message
+          : "Could not save your session. Please try again.",
+      );
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -521,6 +543,9 @@ function ResultsPanel({
           {saved ? "✓ Saved!" : "Save to my progress"}
         </Button>
       </div>
+      {saveError && (
+        <p className="mt-3 text-sm text-error">{saveError}</p>
+      )}
     </div>
   );
 }
@@ -535,6 +560,7 @@ export default function SpeakingPage() {
   const [turns, setTurns] = useState<ConversationTurn[]>([]);
   const [turnIndex, setTurnIndex] = useState(0);
   const [isRecording, setIsRecording] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [speakingResult, setSpeakingResult] = useState<SpeakingResult | null>(
     null,
   );
@@ -542,6 +568,7 @@ export default function SpeakingPage() {
   const audioRecorder = useAudioRecorder();
 
   function handleSelectScenario(s: Scenario) {
+    setError(null);
     setScenario(s);
     setTurns(DUMMY_CONVERSATION); // TODO: fetch scenario turns from API if needed
     setTurnIndex(0);
@@ -550,57 +577,62 @@ export default function SpeakingPage() {
 
   async function handleRecord() {
     if (!isRecording) {
-      setIsRecording(true);
-      await audioRecorder.start();
+      setError(null);
+      try {
+        await audioRecorder.start();
+        setIsRecording(true);
+      } catch {
+        setError("Microphone access is required to record your answer.");
+      }
     } else {
       setIsRecording(false);
-      const blob = await audioRecorder.stop();
-      const form = new FormData();
-      form.append("audio", blob, "turn.webm");
-      form.append("scenarioId", scenario!.id);
-      form.append("turnIndex", String(turnIndex));
+      try {
+        const blob = await audioRecorder.stop();
+        const form = new FormData();
+        form.append("audio", blob, "turn.webm");
+        form.append("scenarioId", scenario!.id);
+        form.append("turnIndex", String(turnIndex));
 
-      // API: POST /api/speech/transcribe
-      // Response: { transcript, word_feedback[], ai_reply_text, corrections[] }
-      const res = await fetch(
-        `${import.meta.env.VITE_API_URL}/api/speech/transcribe`,
-        { method: "POST", body: form },
-      );
-      const data = await res.json();
+        const res = await fetch(
+          `${import.meta.env.VITE_API_URL}/api/speech/transcribe`,
+          { method: "POST", body: form },
+        );
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.detail ?? "Speaking practice is unavailable.");
+        }
 
-      // turnIndex = current AI turn (e.g. index 0)
-      // turnIndex + 1 = the user turn  → update with real transcript + word_feedback
-      // turnIndex + 2 = the next AI turn → update with ai_reply_text from API
-      setTurns((prev) =>
-        prev.map((t, i) => {
-          if (i === turnIndex + 1) {
-            // User turn: replace dummy text with real transcript + colour-coded feedback
-            return {
-              ...t,
-              text: data.transcript,
-              wordFeedback: data.word_feedback,
-            };
-          }
-          if (i === turnIndex + 2 && data.ai_reply_text) {
-            // Next AI turn: replace dummy text with real AI reply
-            return { ...t, text: data.ai_reply_text };
-          }
-          return t;
-        }),
-      );
+        setTurns((prev) =>
+          prev.map((t, i) => {
+            if (i === turnIndex + 1) {
+              return {
+                ...t,
+                text: data.transcript,
+                wordFeedback: data.word_feedback,
+              };
+            }
+            if (i === turnIndex + 2 && data.ai_reply_text) {
+              return { ...t, text: data.ai_reply_text };
+            }
+            return t;
+          }),
+        );
 
-      // Advance by 2: skip past the user turn we just filled AND the next AI turn
-      // This lands back on an AI turn so isAiTurn=true and the record button shows again
-      // On the final recording Math.min clamps to turns.length - 1 (last user turn) → isDone=true
-      setTurnIndex((prev) => Math.min(prev + 2, turns.length - 1));
+        setTurnIndex((prev) => Math.min(prev + 2, turns.length - 1));
 
-      // Speak AI reply via browser Web Speech API — free, no API key
-      if (data.ai_reply_text) {
-        window.speechSynthesis.cancel();
-        const utt = new SpeechSynthesisUtterance(data.ai_reply_text);
-        utt.lang = "en-GB";
-        utt.rate = 0.9;
-        window.speechSynthesis.speak(utt);
+        if (data.ai_reply_text) {
+          window.speechSynthesis.cancel();
+          const utt = new SpeechSynthesisUtterance(data.ai_reply_text);
+          utt.lang = "en-GB";
+          utt.rate = 0.9;
+          window.speechSynthesis.speak(utt);
+        }
+      } catch (requestError) {
+        setError(
+          requestError instanceof Error
+            ? requestError.message
+            : "Speaking practice is unavailable. Please try again.",
+        );
       }
     }
   }
@@ -615,6 +647,7 @@ export default function SpeakingPage() {
     setTurns([]);
     setTurnIndex(0);
     setIsRecording(false);
+    setError(null);
     setSpeakingResult(null);
     setView("picker");
   }
@@ -630,6 +663,7 @@ export default function SpeakingPage() {
         turns={turns}
         currentTurnIndex={turnIndex}
         isRecording={isRecording}
+        error={error}
         onRecord={handleRecord}
         onFinish={handleFinish}
       />
