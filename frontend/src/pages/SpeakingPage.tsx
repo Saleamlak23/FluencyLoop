@@ -163,6 +163,7 @@ function ConversationView({
   turns,
   currentTurnIndex,
   isRecording,
+  attemptCount,
   error,
   onRecord,
   onFinish,
@@ -171,6 +172,7 @@ function ConversationView({
   turns: ConversationTurn[];
   currentTurnIndex: number;
   isRecording: boolean;
+  attemptCount: number;
   error: string | null;
   onRecord: () => void;
   onFinish: (result: SpeakingResult) => void;
@@ -181,6 +183,7 @@ function ConversationView({
   const visibleTurns = turns.slice(0, currentTurnIndex + 1);
   const lastTurn = visibleTurns[visibleTurns.length - 1];
   const isAiTurn = lastTurn?.role === "ai";
+  const isRetryTurn = lastTurn?.role === "user";
   const isDone = currentTurnIndex >= turns.length - 1;
 
   // Build result from accumulated turn data when done
@@ -295,10 +298,12 @@ function ConversationView({
       {/* Action area */}
       {!isDone ? (
         <div className="fl-card p-5 border-primary/20 bg-primary/5 text-center">
-          {isAiTurn ? (
+          {isAiTurn || isRetryTurn ? (
             <div className="flex flex-col items-center gap-3">
               <p className="text-sm text-text-muted">
-                Your turn — press to respond
+                {isRetryTurn
+                  ? `Some words need another try — attempt ${attemptCount + 1} of 3`
+                  : "Your turn — press to respond"}
               </p>
 
               <div className="relative w-16 h-16">
@@ -323,7 +328,11 @@ function ConversationView({
               </div>
 
               <p className="text-xs text-text-subtle">
-                {isRecording ? "Recording… tap to stop" : "Tap to speak"}
+                {isRecording
+                  ? "Recording… tap to stop"
+                  : isRetryTurn
+                    ? "Review the highlighted feedback, then try again"
+                    : "Tap to speak"}
               </p>
             </div>
           ) : (
@@ -568,6 +577,7 @@ export default function SpeakingPage() {
   const [turns, setTurns] = useState<ConversationTurn[]>([]);
   const [turnIndex, setTurnIndex] = useState(0);
   const [isRecording, setIsRecording] = useState(false);
+  const [attemptCount, setAttemptCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [speakingResult, setSpeakingResult] = useState<SpeakingResult | null>(
     null,
@@ -580,6 +590,7 @@ export default function SpeakingPage() {
     setScenario(s);
     setTurns(DUMMY_CONVERSATION); // TODO: fetch scenario turns from API if needed
     setTurnIndex(0);
+    setAttemptCount(0);
     setView("conversation");
   }
 
@@ -596,10 +607,12 @@ export default function SpeakingPage() {
       setIsRecording(false);
       try {
         const blob = await audioRecorder.stop();
+        const responseTurnIndex =
+          turns[turnIndex]?.role === "user" ? turnIndex - 1 : turnIndex;
         const form = new FormData();
         form.append("audio", blob, "turn.webm");
         form.append("scenarioId", scenario!.id);
-        form.append("turnIndex", String(turnIndex));
+        form.append("turnIndex", String(responseTurnIndex));
 
         const res = await fetch(
           `${import.meta.env.VITE_API_URL}/api/speech/transcribe`,
@@ -610,23 +623,35 @@ export default function SpeakingPage() {
           throw new Error(data.detail ?? "Speaking practice is unavailable.");
         }
 
+        const nextAttempt = attemptCount + 1;
+        const hasIncorrectFeedback = (data.word_feedback ?? []).some(
+          (feedback: { status: string }) => feedback.status !== "correct",
+        );
+
         setTurns((prev) =>
           prev.map((t, i) => {
-            if (i === turnIndex + 1) {
+            if (i === responseTurnIndex + 1) {
               return {
                 ...t,
                 text: data.transcript,
                 wordFeedback: data.word_feedback,
               };
             }
-            if (i === turnIndex + 2 && data.ai_reply_text) {
+            if (i === responseTurnIndex + 2 && data.ai_reply_text) {
               return { ...t, text: data.ai_reply_text };
             }
             return t;
           }),
         );
 
-        setTurnIndex((prev) => Math.min(prev + 2, turns.length - 1));
+        if (hasIncorrectFeedback && nextAttempt < 3) {
+          setAttemptCount(nextAttempt);
+          setTurnIndex(responseTurnIndex + 1);
+          return;
+        }
+
+        setAttemptCount(0);
+        setTurnIndex(Math.min(responseTurnIndex + 2, turns.length - 1));
 
         if (data.ai_reply_text) {
           window.speechSynthesis.cancel();
@@ -652,6 +677,7 @@ export default function SpeakingPage() {
     setTurns([]);
     setTurnIndex(0);
     setIsRecording(false);
+    setAttemptCount(0);
     setError(null);
     setSpeakingResult(null);
     setView("picker");
@@ -668,6 +694,7 @@ export default function SpeakingPage() {
         turns={turns}
         currentTurnIndex={turnIndex}
         isRecording={isRecording}
+        attemptCount={attemptCount}
         error={error}
         onRecord={handleRecord}
         onFinish={handleFinish}
