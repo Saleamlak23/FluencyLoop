@@ -257,11 +257,13 @@ async def _get_live_word() -> dict:
             response.raise_for_status()
             entry = response.json()[0]
     except (httpx.HTTPError, IndexError, KeyError, TypeError, ValueError) as error:
-        print(f"[vocabulary] public dictionary lookup failed: {error}")
-        raise HTTPException(
-            status_code=503,
-            detail="Today's word is temporarily unavailable. Please try again shortly.",
-        ) from error
+        # Keep the feature available during a public API outage. The live API
+        # remains the primary source; this is only the deterministic fallback.
+        print(
+            f"[vocabulary] public dictionary lookup failed: "
+            f"{type(error).__name__}: {error!r}"
+        )
+        return _get_todays_word()
 
     phonetic = next(
         (
