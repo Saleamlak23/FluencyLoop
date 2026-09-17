@@ -89,6 +89,8 @@ export interface WritingFeedback {
   rewrittenText: string;
   errors: InlineError[];
   overallScore: number; // out of 5
+  contextScore: number; // out of 5
+  contextFeedback: string;
   topInsights: string[];
 }
 

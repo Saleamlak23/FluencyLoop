@@ -1,5 +1,6 @@
 import json
 from datetime import date
+import httpx
 from fastapi import APIRouter, HTTPException, Request, Depends
 from models.schemas import SentenceEvalRequest, SentenceEvalResponse
 from services.ai_client import get_groq_client, GROQ_FAST_MODEL
@@ -231,18 +232,98 @@ def _get_todays_word() -> dict:
     return WORDS[days_since % len(WORDS)]
 
 
+PUBLIC_WORD_CANDIDATES = (
+    "meticulous",
+    "negotiate",
+    "concise",
+    "persistent",
+    "clarify",
+    "substantial",
+    "initiative",
+)
+
+
+async def _get_live_word() -> dict:
+    """Build today's lesson from the public Dictionary API."""
+    start = date(2024, 1, 1)
+    days_since = (date.today() - start).days
+    word = PUBLIC_WORD_CANDIDATES[days_since % len(PUBLIC_WORD_CANDIDATES)]
+
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            response = await client.get(
+                f"https://api.dictionaryapi.dev/api/v2/entries/en/{word}"
+            )
+            response.raise_for_status()
+            entry = response.json()[0]
+    except (httpx.HTTPError, IndexError, KeyError, TypeError, ValueError) as error:
+        # Keep the feature available during a public API outage. The live API
+        # remains the primary source; this is only the deterministic fallback.
+        print(
+            f"[vocabulary] public dictionary lookup failed: "
+            f"{type(error).__name__}: {error!r}"
+        )
+        return _get_todays_word()
+
+    phonetic = next(
+        (
+            item.get("text")
+            for item in entry.get("phonetics", [])
+            if isinstance(item, dict) and item.get("text")
+        ),
+        "",
+    )
+    definitions = []
+    for meaning in entry.get("meanings", []):
+        part_of_speech = meaning.get("partOfSpeech", "phrase")
+        if part_of_speech not in {"noun", "verb", "adjective", "adverb", "phrase"}:
+            part_of_speech = "phrase"
+        examples = [
+            {
+                "context": "Example",
+                "sentence": definition["example"],
+            }
+            for definition in meaning.get("definitions", [])
+            if definition.get("example")
+        ][:3]
+        definitions.append(
+            {
+                "partOfSpeech": part_of_speech,
+                "meaning": meaning.get("definitions", [{}])[0].get(
+                    "definition", "A useful English word to practise today."
+                ),
+                "examples": examples,
+            }
+        )
+
+    return {
+        "id": word,
+        "word": entry.get("word", word).title(),
+        "phonetic": phonetic,
+        "definitions": definitions,
+        "challenge": {
+            "instruction": f"Write a sentence using the word '{word}'.",
+            "hints": [
+                f"Use '{word}' in a sentence about work, study, or daily life.",
+                "Make sure the sentence shows the word's meaning clearly.",
+            ],
+            "exampleAnswer": f"I used the word {word} naturally in a sentence today.",
+        },
+    }
+
+
 # ── Endpoints ────────────────────────────────────────────────────────────────
 
 @router.get("/word-of-the-day")
-def word_of_the_day():
+async def word_of_the_day():
     """
-    Return today's word deterministically.
-    Same word is returned for all users on the same UTC day.
+    Return today's word using the public Dictionary API.
+    The candidate word is deterministic, while its definition is live.
 
     GET /api/vocabulary/word-of-the-day
     Response: WordOfTheDay object
     """
-    return _get_todays_word()
+    return await _get_live_word()
 
 
 @router.post("/evaluate-sentence", response_model=SentenceEvalResponse)
