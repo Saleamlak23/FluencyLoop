@@ -1,7 +1,7 @@
 // src/pages/WritingPage.tsx
 
 import { useState, useMemo } from "react";
-import { WRITING_PROMPTS } from "../lib/dummy-data";
+import { WRITING_PROMPTS } from "../lib/content-data";
 import type { WritingPrompt, WritingFeedback, InlineError } from "../lib/types";
 import Badge from "../components/ui/Badge";
 import Button from "../components/ui/Button";

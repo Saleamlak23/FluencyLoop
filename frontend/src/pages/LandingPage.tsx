@@ -1,7 +1,7 @@
 // src/pages/LandingPage.tsx
 
 import { NavLink } from "react-router-dom";
-import { SCENARIOS, WRITING_PROMPTS } from "../lib/dummy-data";
+import { SCENARIOS, WRITING_PROMPTS } from "../lib/content-data";
 
 export default function LandingPage() {
   return (

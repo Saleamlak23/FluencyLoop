@@ -8,7 +8,7 @@ from services.rate_limiter import check_rate_limit
 router = APIRouter()
 
 # ── Word bank ────────────────────────────────────────────────────────────────
-# Mirrors the frontend WORDS_OF_THE_DAY list in src/lib/dummy-data.ts.
+# Mirrors the frontend WORDS_OF_THE_DAY list in src/lib/content-data.ts.
 # Both use the same deterministic day-index rotation so they always agree.
 # Expand this list in V2 — the rotation logic handles any length automatically.
 

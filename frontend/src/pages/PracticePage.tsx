@@ -1,17 +1,16 @@
 // src/pages/PracticePage.tsx
 
-import { useState, useMemo, useRef } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { NavLink } from "react-router-dom";
 import {
   WARMUP_QUESTIONS,
-  DUMMY_SPEAKING_RESULT,
-  DUMMY_SESSION_SUMMARY,
   SCENARIOS,
   WRITING_PROMPTS,
-} from "../lib/dummy-data";
+} from "../lib/content-data";
 import type {
   SessionStep,
   WarmUpQuestion,
+  SpeakingResult,
   WritingFeedback,
   ConversationTurn,
 } from "../lib/types";
@@ -584,26 +583,23 @@ function WritingStep({
 function SummaryStep({
   onRestart,
   writingFeedback,
+  speakingResult,
+  streak,
+  sessions,
 }: {
   onRestart: () => void;
-  writingFeedback: WritingFeedback | null; // ← real writing data passed in
+  writingFeedback: WritingFeedback | null;
+  speakingResult: SpeakingResult | null;
+  streak: number;
+  sessions: number;
 }) {
-  // Real writing data; dummy speaking + streak until those integrations are done
-  // TODO item 11: replace DUMMY_SPEAKING_RESULT with real speaking result from API
-  // TODO item 16: replace streak/sessionsCompleted with GET /api/user/progress
-  const speaking = DUMMY_SPEAKING_RESULT;
-  const writing = writingFeedback ?? DUMMY_SESSION_SUMMARY.writingFeedback;
-  const streak = DUMMY_SESSION_SUMMARY.streak;
-  const sessions = DUMMY_SESSION_SUMMARY.sessionsCompleted;
-
-  const topInsights = writingFeedback
-    ? writingFeedback.topInsights
-    : DUMMY_SESSION_SUMMARY.topInsights;
+  const writing = writingFeedback;
+  const topInsights = writing?.topInsights ?? [];
 
   const levelSuggestion =
-    writing.overallScore >= 4
+    (writing?.overallScore ?? 0) >= 4
       ? "upgrade"
-      : writing.overallScore >= 3
+      : (writing?.overallScore ?? 0) >= 3
         ? "stay"
         : "encourage";
 
@@ -653,19 +649,21 @@ function SummaryStep({
             </div>
             <div className="flex items-end gap-2 mb-2">
               <span className="font-display font-bold text-2xl text-primary">
-                {speaking.toneScore}/5
+                {speakingResult ? `${speakingResult.toneScore}/5` : "—"}
               </span>
               <span className="text-xs text-text-subtle mb-0.5">
                 tone score
               </span>
             </div>
             <ProgressBar
-              value={(speaking.toneScore / 5) * 100}
+              value={speakingResult ? (speakingResult.toneScore / 5) * 100 : 0}
               variant="primary"
               size="sm"
             />
             <p className="text-xs text-text-subtle mt-2">
-              {speaking.wordsSpoken} words · {speaking.errorsFound} corrections
+              {speakingResult
+                ? `${speakingResult.wordsSpoken} words · ${speakingResult.errorsFound} corrections`
+                : "No speaking result recorded yet"}
             </p>
           </div>
 
@@ -678,19 +676,19 @@ function SummaryStep({
             </div>
             <div className="flex items-end gap-2 mb-2">
               <span className="font-display font-bold text-2xl text-accent">
-                {writing.overallScore}/5
+                {writing ? `${writing.overallScore}/5` : "—"}
               </span>
               <span className="text-xs text-text-subtle mb-0.5">
                 overall score
               </span>
             </div>
             <ProgressBar
-              value={(writing.overallScore / 5) * 100}
+              value={writing ? (writing.overallScore / 5) * 100 : 0}
               variant="accent"
               size="sm"
             />
             <p className="text-xs text-text-subtle mt-2">
-              {writing.errors.length} corrections found
+              {writing ? `${writing.errors.length} corrections found` : "No writing result recorded yet"}
             </p>
           </div>
         </div>
@@ -774,10 +772,28 @@ export default function PracticePage() {
   const [step, setStep] = useState<SessionStep>("warmup");
   const [writingFeedback, setWritingFeedback] =
     useState<WritingFeedback | null>(null);
+  const [speakingResult] = useState<SpeakingResult | null>(null);
+  const [progress, setProgress] = useState({ streak: 0, sessionsCompleted: 0 });
 
-  const question = useMemo(
+  useEffect(() => {
+    const apiUrl = import.meta.env.VITE_API_URL;
+    if (!apiUrl) return;
+
+    fetch(`${apiUrl}/api/user/progress`)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (data) {
+          setProgress({
+            streak: Number(data.streak) || 0,
+            sessionsCompleted: Number(data.sessions_completed) || 0,
+          });
+        }
+      })
+      .catch(() => undefined);
+  }, []);
+
+  const [question] = useState<WarmUpQuestion>(
     () => WARMUP_QUESTIONS[Math.floor(Math.random() * WARMUP_QUESTIONS.length)],
-    [],
   );
 
   function handleRestart() {
@@ -814,6 +830,9 @@ export default function PracticePage() {
         <SummaryStep
           onRestart={handleRestart}
           writingFeedback={writingFeedback}
+          speakingResult={speakingResult}
+          streak={progress.streak}
+          sessions={progress.sessionsCompleted}
         />
       )}
     </div>

@@ -154,3 +154,8 @@ __pycache__/
 *.py[cod]
 .venv/
 venv/
+implementation_plan.md
+**/dummy-data.*
+**/*dummy*.*
+**/mock-data.*
+**/*fixture*.*

@@ -1,7 +1,7 @@
 // src/pages/SpeakingPage.tsx
 
 import { useState, useRef } from "react";
-import { SCENARIOS } from "../lib/dummy-data";
+import { SCENARIOS } from "../lib/content-data";
 import type {
   Scenario,
   ConversationTurn,

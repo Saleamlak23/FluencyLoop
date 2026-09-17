@@ -1,14 +1,6 @@
-// src/lib/dummy-data.ts
+// Static product content used by the frontend.
 
-import type {
-  Scenario,
-  WritingPrompt,
-  WarmUpQuestion,
-  ConversationTurn,
-  SpeakingResult,
-  WritingFeedback,
-  SessionSummaryData,
-} from "./types";
+import type { Scenario, WritingPrompt, WarmUpQuestion, ConversationTurn, SpeakingResult, WritingFeedback, SessionSummaryData, WordOfTheDay } from "./types";
 
 // ── Scenarios ──────────────────────────────────────────────────────────────
 
@@ -338,8 +330,6 @@ export const DUMMY_SESSION_SUMMARY: SessionSummaryData = {
 };
 
 // ── Word of the Day list ───────────────────────────────────────────────────
-
-import type { WordOfTheDay } from "./types";
 
 export const WORDS_OF_THE_DAY: WordOfTheDay[] = [
   {
