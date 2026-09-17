@@ -22,17 +22,21 @@ ALLOWED_PREFIXES = (
 # Mirrors the frontend SCENARIOS list — used to build the AI system prompt.
 
 SCENARIO_META = {
-    "ordering-coffee": {
-        "role":        "a friendly barista at a busy London coffee shop called The Daily Grind",
-        "description": "The student is ordering a coffee drink at a coffee shop.",
-    },
-    "asking-directions": {
-        "role":        "a helpful local pedestrian on a busy city street",
-        "description": "The student is lost and asking for directions to the nearest train station.",
-    },
     "job-interview": {
-        "role":        "a friendly company receptionist",
-        "description": "The student has arrived early for a job interview and is making small talk while waiting.",
+        "role":        "an engineering manager and tech lead conducting a technical interview",
+        "description": "The student is interviewing for a software engineering position, discussing system design, technical trade-offs, and past engineering experiences.",
+    },
+    "incident-postmortem": {
+        "role":        "a staff reliability engineer and team lead running an incident postmortem review",
+        "description": "The student is in an engineering postmortem review discussing a production API outage, root cause analysis, and preventative monitoring.",
+    },
+    "client-consultation": {
+        "role":        "a corporate client's VP of Technology seeking cloud consulting",
+        "description": "The student is leading a client requirements discovery meeting on cloud migration, addressing downtime concerns and establishing timelines.",
+    },
+    "airport-navigation": {
+        "role":        "an airport customer service officer at flight transit connections",
+        "description": "The student has a tight international flight connection at Heathrow Airport and needs guidance on transit security, terminals, and departure gates.",
     },
 }
 
@@ -47,8 +51,9 @@ Scenario context: {description}
 
 Your job:
 1. Stay in character and reply naturally (1-2 sentences max).
-2. Analyse every word in the student's sentence for grammar, vocabulary, and naturalness.
-3. Flag words as: "correct" (natural and accurate), "caution" (understood but unnatural), or "error" (grammatically wrong).
+2. Analyse the complete sentence and every word for grammar, vocabulary, and naturalness.
+3. Check grammar rules including subject-verb agreement, verb tense and form, sentence structure, word order, articles, prepositions, plurals, pronouns, and countable/uncountable nouns.
+4. Flag words as: "correct" (grammatically correct, natural, and accurate), "caution" (grammatically acceptable but less natural or precise), or "error" (grammatically wrong, missing, or incorrectly used).
 
 Respond with ONLY valid JSON in this exact format — no text, no markdown outside the JSON:
 {{
@@ -67,12 +72,27 @@ Respond with ONLY valid JSON in this exact format — no text, no markdown outsi
       "better":   "<more natural or correct alternative>",
       "why":      "<one clear sentence explaining why>"
     }}
-  ]
+  ],
+  "general_feedback": "<brief, supportive feedback describing the general issue type in plain English>",
+    "specific_feedback": [
+        {{
+            "original": "<word or phrase the student used>",
+            "better": "<correct or more natural alternative>",
+            "why": "<clear explanation of the correction>"
+        }}
+    ],
+  "model_answer": "<one complete, natural, grammatically correct version of the student's sentence>"
 }}
 
 Important rules:
 - word_feedback MUST include EVERY word from the student's sentence — do not skip any.
+- Judge grammar in the context of the complete sentence, not each word in isolation.
+- If a grammar rule is broken, mark the affected word or words as "error" even when the meaning is understandable.
+- Do not mark a word "correct" merely because it is a valid English word; verify its role and form in the sentence.
 - Only add entries to corrections[] for words marked caution or error.
+- general_feedback should be friendly, short, and explain the issue category (grammar, word choice, sentence structure, context, or naturalness).
+- specific_feedback must contain structured original, better, and why entries for the most important mistakes.
+- model_answer must be a full natural sentence the student can learn from.
 - Keep character_reply warm, short, and in character.
 - Return pure JSON only — no preamble, no explanation outside the JSON object.
 """
@@ -93,6 +113,8 @@ async def transcribe(
     audio:      UploadFile = File(...),
     scenarioId: str        = Form(default="ordering-coffee"),
     turnIndex:  int        = Form(default=0),
+    scenarioRole: str      = Form(default=""),
+    scenarioContext: str   = Form(default=""),
     _=Depends(check_rate_limit),
 ):
     """
@@ -162,7 +184,19 @@ async def transcribe(
         print(f"[transcribe] ✅ STT done — scenarioId={scenarioId}, turn={turnIndex}, text='{transcript}'")
 
         # ── Step 2: AI reply + word feedback via Groq GPT OSS 20B ─────────
-        scenario = SCENARIO_META.get(scenarioId, SCENARIO_META["ordering-coffee"])
+        scenario = SCENARIO_META.get(scenarioId)
+        if scenarioId.startswith("custom-"):
+            if not scenarioRole.strip() or not scenarioContext.strip():
+                raise HTTPException(
+                    status_code=400,
+                    detail="Custom scenarios require both scenarioRole and scenarioContext.",
+                )
+            scenario = {
+                "role": scenarioRole.strip()[:160],
+                "description": scenarioContext.strip()[:600],
+            }
+        if scenario is None:
+            raise HTTPException(status_code=400, detail="Unknown speaking scenario.")
         prompt   = SPEAKING_SYSTEM_PROMPT.format(
             role=scenario["role"],
             transcript=transcript,
@@ -182,11 +216,20 @@ async def transcribe(
 
         print(f"[transcribe] ✅ LLM done — reply='{parsed.get('character_reply', '')[:60]}...'")
 
+        specific_feedback = parsed.get("specific_feedback", [])
+        if isinstance(specific_feedback, dict):
+            specific_feedback = [specific_feedback]
+        elif not isinstance(specific_feedback, list):
+            specific_feedback = []
+
         return {
-            "transcript":    transcript,
-            "word_feedback": parsed.get("word_feedback", []),
-            "ai_reply_text": parsed.get("character_reply", ""),
-            "corrections":   parsed.get("corrections", []),
+            "transcript":         transcript,
+            "word_feedback":      parsed.get("word_feedback", []),
+            "ai_reply_text":      parsed.get("character_reply", ""),
+            "corrections":        parsed.get("corrections", []),
+            "general_feedback":   parsed.get("general_feedback", "There is a grammar or naturalness issue in your response. Review the highlighted words and try again."),
+            "specific_feedback":  specific_feedback,
+            "model_answer":       parsed.get("model_answer", transcript),
         }
 
     except HTTPException:

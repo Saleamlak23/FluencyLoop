@@ -14,31 +14,68 @@ import type {
 
 export const SCENARIOS: Scenario[] = [
   {
-    id: "ordering-coffee",
-    emoji: "☕",
-    title: "Ordering Coffee",
-    description:
-      "You've just walked into a London coffee shop. Order your drink and handle any questions the barista has.",
-    level: "everyday",
-    totalTurns: 4,
-  },
-  {
-    id: "asking-directions",
-    emoji: "🗺️",
-    title: "Asking for Directions",
-    description:
-      "You're lost in a new city. Stop someone on the street and ask how to get to the nearest train station.",
-    level: "everyday",
-    totalTurns: 4,
-  },
-  {
     id: "job-interview",
     emoji: "💼",
-    title: "Job Interview Small Talk",
+    title: "Software Engineering Technical Interview",
     description:
-      "You've arrived early for a job interview. The receptionist starts a friendly conversation while you wait.",
+      "Interview with an engineering manager. Discuss your technical background, system architecture trade-offs, and how you resolve production challenges.",
     level: "free",
+    totalTurns: 5,
+    aiRole: "an engineering manager conducting a technical interview",
+    aiContext:
+      "A technical interview evaluating system design, past engineering challenges, testing strategies, and communication.",
+    initialPrompt:
+      "Welcome! Thank you for taking the time to meet with us today. To start off, could you give us a brief introduction of your technical background and what projects you've recently focused on?",
+    initialHint:
+      "Introduce your primary technical focus, core languages/tools, and one impactful project.",
+  },
+  {
+    id: "incident-postmortem",
+    emoji: "🚨",
+    title: "Production Incident Debrief",
+    description:
+      "Lead a post-incident review following an unexpected API outage. Explain root causes, system mitigation, and preventive safeguards with senior teammates.",
+    level: "everyday",
     totalTurns: 4,
+    aiRole: "a staff reliability engineer running an incident postmortem review",
+    aiContext:
+      "An engineering postmortem meeting reviewing a high-severity production outage, root-cause analysis, and preventative monitoring.",
+    initialPrompt:
+      "Thanks for joining the postmortem review. Yesterday our core API suffered elevated latency and 504 gateway timeouts. Could you walk us through what triggered the incident and how we mitigated it?",
+    initialHint:
+      "Explain the trigger clearly (e.g. connection pool exhaustion), the immediate fix applied, and current system stability.",
+  },
+  {
+    id: "client-consultation",
+    emoji: "🤝",
+    title: "Client Requirements Discovery",
+    description:
+      "Consult with a corporate client planning a cloud migration. Clarify business goals, address downtime concerns, and establish timeline expectations.",
+    level: "everyday",
+    totalTurns: 4,
+    aiRole: "a corporate client's VP of Technology seeking cloud consulting",
+    aiContext:
+      "A business discovery meeting discussing system requirements, cloud migration risks, and phased project timelines.",
+    initialPrompt:
+      "Hello, thanks for meeting with us today. We want to modernize our legacy services, but downtime during business hours is our biggest fear. How does your team approach migrations with minimal risk?",
+    initialHint:
+      "Acknowledge their downtime concerns respectfully and propose a zero-downtime, phased rollout strategy.",
+  },
+  {
+    id: "airport-navigation",
+    emoji: "✈️",
+    title: "Airport Transit & Gate Connection",
+    description:
+      "Navigate a tight international flight transfer at a major airport. Ask airport staff for express security, confirm baggage transfer, and locate your departure gate.",
+    level: "foundation",
+    totalTurns: 3,
+    aiRole: "an airport customer service officer at flight transit connections",
+    aiContext:
+      "An international airport traveler navigating a tight flight transfer, requiring clear navigation and practical communication.",
+    initialPrompt:
+      "Hello! Welcome to the flight connections desk. How can I help you reach your connecting flight today?",
+    initialHint:
+      "State that your connecting flight departs in 45 minutes and ask how to reach Terminal 2 quickly.",
   },
 ];
 
