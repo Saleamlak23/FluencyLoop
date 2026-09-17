@@ -29,6 +29,53 @@ function scoreLabel(score: number): string {
   return "Needs work";
 }
 
+function normalizeWritingFeedback(data: unknown, submittedText: string): WritingFeedback {
+  if (!data || typeof data !== "object") {
+    throw new Error("The writing service returned an invalid response.");
+  }
+
+  const response = data as Record<string, unknown>;
+  const rewrittenText = response.rewritten_text ?? response.rewrittenText;
+  const overallScore = response.overall_score ?? response.overallScore;
+  const topInsights = response.top_insights ?? response.topInsights;
+  const originalText = response.original_text ?? response.originalText ?? submittedText;
+
+  if (
+    typeof originalText !== "string" ||
+    typeof rewrittenText !== "string" ||
+    typeof overallScore !== "number"
+  ) {
+    throw new Error("The writing service returned incomplete feedback.");
+  }
+
+  const errors = Array.isArray(response.errors) ? response.errors : [];
+  const normalizedErrors: InlineError[] = errors.filter(
+    (error): error is InlineError => {
+      if (!error || typeof error !== "object") return false;
+      const item = error as Record<string, unknown>;
+      return (
+        typeof item.original === "string" &&
+        typeof item.corrected === "string" &&
+        typeof item.explanation === "string" &&
+        ["grammar", "spelling", "style", "vocabulary"].includes(
+          item.type as string,
+        )
+      );
+    },
+  );
+
+  return {
+    promptId: typeof response.promptId === "string" ? response.promptId : "",
+    originalText,
+    rewrittenText,
+    errors: normalizedErrors,
+    overallScore: Math.max(1, Math.min(5, Math.round(overallScore))),
+    topInsights: Array.isArray(topInsights)
+      ? topInsights.filter((insight): insight is string => typeof insight === "string")
+      : [],
+  };
+}
+
 type ErrorVariant = "error" | "caution" | "primary" | "accent";
 
 type ErrorTypeMeta = {
@@ -163,10 +210,12 @@ function WritingEditor({
   prompt,
   onSubmit,
   loading,
+  error,
 }: {
   prompt: WritingPrompt;
   onSubmit: (text: string) => void;
   loading: boolean;
+  error: string | null;
 }) {
   const [text, setText] = useState("");
 
@@ -242,6 +291,15 @@ function WritingEditor({
             : isReady
             ? "Looks good — ready to submit!"
             : `Write at least ${prompt.minSentences} sentences to continue.`}
+        </p>
+      )}
+
+      {error && (
+        <p
+          className="mb-5 rounded-lg border border-error/30 bg-error/10 px-3 py-2 text-sm text-error"
+          role="alert"
+        >
+          {error}
         </p>
       )}
 
@@ -488,33 +546,51 @@ export default function WritingPage() {
   const [prompt,   setPrompt]   = useState<WritingPrompt | null>(null);
   const [loading,  setLoading]  = useState(false);
   const [feedback, setFeedback] = useState<WritingFeedback | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   function handleSelectPrompt(p: WritingPrompt) {
+    setError(null);
     setPrompt(p);
     setView("editor");
   }
 
   async function handleSubmit(text: string) {
     setLoading(true);
-    // API: POST /api/writing/evaluate — body: { promptId, text }
-    // Response shape matches WritingFeedback type exactly
-    const res  = await fetch(
-      `${import.meta.env.VITE_API_URL}/api/writing/evaluate`,
-      {
-        method:  "POST",
-        headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ promptId: prompt!.id, text }),
+    setError(null);
+    try {
+      const res = await fetch(
+        `${import.meta.env.VITE_API_URL}/api/writing/evaluate`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ promptId: prompt!.id, text }),
+        },
+      );
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        throw new Error(
+          data && typeof data.detail === "string"
+            ? data.detail
+            : "Writing evaluation is unavailable. Please try again.",
+        );
       }
-    );
-    const data: WritingFeedback = await res.json();
-    setFeedback(data);
-    setLoading(false);
-    setView("feedback");
+      setFeedback(normalizeWritingFeedback(data, text));
+      setView("feedback");
+    } catch (requestError) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : "Writing evaluation is unavailable. Please try again.",
+      );
+    } finally {
+      setLoading(false);
+    }
   }
 
   function handleRestart() {
     setPrompt(null);
     setFeedback(null);
+    setError(null);
     setView("picker");
   }
 
@@ -528,6 +604,7 @@ export default function WritingPage() {
         prompt={prompt}
         onSubmit={handleSubmit}
         loading={loading}
+        error={error}
       />
     );
   }
