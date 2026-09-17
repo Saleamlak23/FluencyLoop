@@ -25,17 +25,17 @@ Do not add any markdown, preamble, or explanation outside the JSON object:
       "original": "<the incorrect or unnatural phrase, verbatim from the student's text>",
       "corrected": "<the corrected version>",
       "explanation": "<one clear sentence explaining the rule or improvement>",
-      "type": "grammar" | "spelling" | "style" | "vocabulary"
+    "type": "grammar"
     }
   ],
   "rewritten_text": "<a fully rewritten, natural version of the student's text>",
-  "overall_score": <integer 1-5>,
-    "context_score": <integer 1-5, based on how well the response answers the prompt>,
-    "context_feedback": "<brief explanation of whether the response fulfills the prompt and what is missing, if anything>",
-  "top_insights": ["<insight 1>", "<insight 2>", "<insight 3>"]
+    "overall_score": 3,
+    "context_score": 3,
+    "context_feedback": "The response partly addresses the task; add the missing details.",
+    "top_insights": ["<insight 1>", "<insight 2>", "<insight 3>"]
 }
 
-Be thorough but kind. Judge both language quality and task completion. A grammatically perfect answer that ignores the prompt must receive a low context_score and clear guidance. If the text has no errors, say so warmly in top_insights and give a score of 5."""
+Use only these exact values for error type: grammar, spelling, style, or vocabulary. Use integer scores from 1 to 5. Judge both language quality and task completion. A grammatically perfect answer that ignores the prompt must receive a low context_score and clear guidance. If the text has no errors, say so warmly in top_insights and give a score of 5."""
 
 
 # ── Helper ───────────────────────────────────────────────────────────────────
@@ -116,11 +116,7 @@ async def evaluate_writing(
         return _validate_scores(data)
 
     except Exception as groq_error:
-        if "429" not in str(groq_error):
-            raise HTTPException(
-                status_code=500,
-                detail=f"Writing evaluation error (Groq): {groq_error}",
-            )
+        print(f"[writing] Groq evaluation failed; trying fallback: {groq_error}")
 
     # ── Fallback 1: Gemini 2.5 Flash ────────────────────────────────────────
     try:
@@ -135,11 +131,7 @@ async def evaluate_writing(
         return _validate_scores(data)
 
     except Exception as gemini_error:
-        if "429" not in str(gemini_error):
-            raise HTTPException(
-                status_code=502,
-                detail=f"Writing evaluation error (Gemini): {gemini_error}",
-            )
+        print(f"[writing] Gemini evaluation failed; trying fallback: {gemini_error}")
 
     # ── Fallback 2: Mistral Large ────────────────────────────────────────────
     try:
@@ -155,10 +147,8 @@ async def evaluate_writing(
         return _validate_scores(data)
 
     except Exception as mistral_error:
+        print(f"[writing] Mistral evaluation failed: {mistral_error}")
         raise HTTPException(
             status_code=503,
-            detail=(
-                "All AI providers are currently rate-limited. "
-                f"Last error (Mistral): {mistral_error}. Please try again in a minute."
-            ),
+            detail="Writing evaluation is temporarily unavailable. Please try again shortly.",
         )
