@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useEffect } from "react";
 import type { WordOfTheDay, WordDefinition } from "../lib/types";
+import { isWordOfDayCompleted, markWordOfDayCompleted, getProgress } from "../lib/progressStorage";
 import Badge from "../components/ui/Badge";
 import Button from "../components/ui/Button";
 
@@ -222,6 +223,9 @@ function ChallengeSection({
     feedback: string;
     improvement: string | null;
   } | null>(null);
+  const [completed, setCompleted] = useState(() =>
+    isWordOfDayCompleted(getProgress(), word),
+  );
 
   const wordCount    = userAnswer.trim().split(/\s+/).filter(Boolean).length;
   const containsWord = userAnswer.toLowerCase().includes(word.toLowerCase());
@@ -241,6 +245,8 @@ function ChallengeSection({
     );
     const data = await res.json();
     setAiFeedback(data);
+    markWordOfDayCompleted(word);
+    setCompleted(true);
   }
 
   function handleReset() {
@@ -268,14 +274,17 @@ function ChallengeSection({
       </div>
 
       {state === "idle" && (
-        <Button
-          onClick={() => setState("writing")}
-          variant="primary"
-          size="md"
-          rightIcon={<span>→</span>}
-        >
-          Start the challenge
-        </Button>
+        <div className="flex items-center gap-3">
+          <Button
+            onClick={() => setState("writing")}
+            variant="primary"
+            size="md"
+            rightIcon={<span>→</span>}
+          >
+            {completed ? "Practise again" : "Start the challenge"}
+          </Button>
+          {completed && <Badge variant="correct">Completed today</Badge>}
+        </div>
       )}
 
       {state === "writing" && (

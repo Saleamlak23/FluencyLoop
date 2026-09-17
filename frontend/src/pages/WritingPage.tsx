@@ -3,6 +3,7 @@
 import { useState, useMemo } from "react";
 import { WRITING_PROMPTS } from "../lib/content-data";
 import type { WritingPrompt, WritingFeedback, InlineError } from "../lib/types";
+import { recordSession } from "../lib/progressStorage";
 import Badge from "../components/ui/Badge";
 import Button from "../components/ui/Button";
 import ProgressBar from "../components/ui/ProgressBar";
@@ -599,6 +600,7 @@ export default function WritingPage() {
         );
       }
       setFeedback(normalizeWritingFeedback(data, text));
+      recordSession();
       setView("feedback");
     } catch (requestError) {
       setError(

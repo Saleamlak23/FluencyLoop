@@ -2,6 +2,10 @@
 
 import { Outlet, NavLink, useLocation } from "react-router-dom";
 import { useState, useEffect } from "react";
+import {
+  getProgress,
+  subscribeToProgress,
+} from "../../lib/progressStorage";
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -10,12 +14,6 @@ interface NavItem {
   label: string;
   emoji: string;
   description: string;
-}
-
-interface UserProgress {
-  streak: number;
-  sessions_completed: number;
-  level: "foundation" | "everyday" | "free";
 }
 
 // ── Nav items ─────────────────────────────────────────────────────────────
@@ -48,29 +46,13 @@ const NAV_ITEMS: NavItem[] = [
 ];
 
 // ── Progress hook ─────────────────────────────────────────────────────────
-// Fetches streak + sessions from the backend once on mount.
-// Falls back to zeros gracefully if the API is not yet live.
+// Reads persistent streak and session progress from browser storage.
 
-function useUserProgress(): UserProgress {
-  const [progress, setProgress] = useState<UserProgress>({
-    streak:             0,
-    sessions_completed: 0,
-    level:              "everyday",
-  });
+function useUserProgress() {
+  const [progress, setProgress] = useState(() => getProgress());
 
   useEffect(() => {
-    // API: GET /api/user/progress
-    // Response: { streak: number, sessions_completed: number, level: string }
-    fetch(`${import.meta.env.VITE_API_URL}/api/user/progress`)
-      .then((r) => {
-        if (!r.ok) throw new Error("Progress fetch failed");
-        return r.json();
-      })
-      .then((data: UserProgress) => setProgress(data))
-      .catch(() => {
-        // API not yet live — silently keep default zeros
-        // Remove this catch block once backend is integrated
-      });
+    return subscribeToProgress(() => setProgress(getProgress()));
   }, []);
 
   return progress;
@@ -82,7 +64,7 @@ export default function Layout() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const location  = useLocation();
   const isLanding = location.pathname === "/";
-  const progress  = useUserProgress();   // ← real streak + sessions from API
+  const progress  = useUserProgress();
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -252,7 +234,6 @@ export default function Layout() {
                 This week
               </div>
 
-              {/* REAL: progress.streak from GET /api/user/progress */}
               <div className="flex items-center gap-2 mb-1">
                 <span className="text-sm">🔥</span>
                 <span className="text-sm text-text-muted">
@@ -262,12 +243,11 @@ export default function Layout() {
                 </span>
               </div>
 
-              {/* REAL: progress.sessions_completed from GET /api/user/progress */}
               <div className="flex items-center gap-2">
                 <span className="text-sm">✅</span>
                 <span className="text-sm text-text-muted">
-                  {progress.sessions_completed > 0
-                    ? `${progress.sessions_completed} sessions done`
+                  {progress.sessionsCompleted > 0
+                    ? `${progress.sessionsCompleted} sessions done`
                     : "No sessions yet"}
                 </span>
               </div>

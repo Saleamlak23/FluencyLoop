@@ -10,6 +10,7 @@ import type {
   Level,
 } from "../lib/types";
 import { formatLevel } from "../lib/types";
+import { recordSession } from "../lib/progressStorage";
 import Badge from "../components/ui/Badge";
 import Button from "../components/ui/Button";
 import ProgressBar from "../components/ui/ProgressBar";
@@ -1232,6 +1233,7 @@ export default function SpeakingPage() {
   }
 
   function handleFinish(result: SpeakingResult) {
+    recordSession();
     setSpeakingResult(result);
     setView("results");
   }
