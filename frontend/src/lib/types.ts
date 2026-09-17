@@ -17,6 +17,17 @@ export interface Scenario {
   description: string;
   level: Level;
   totalTurns: number;
+  aiRole?: string;
+  aiContext?: string;
+  initialPrompt?: string;
+  initialHint?: string;
+}
+
+export function formatLevel(level: Level): string {
+  if (level === "free") return "Advanced";
+  if (level === "everyday") return "Everyday";
+  if (level === "foundation") return "Foundation";
+  return level;
 }
 
 export interface WordFeedback {
@@ -32,6 +43,7 @@ export interface ConversationTurn {
   text: string;
   wordFeedback?: WordFeedback[]; // only on user turns
   hint?: string;                 // next prompt hint shown after AI turn
+  corrected?: boolean;            // model answer inserted after failed attempts
 }
 
 export interface CorrectionRow {

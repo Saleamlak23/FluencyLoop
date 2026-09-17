@@ -4,7 +4,6 @@ import { useState, useMemo, useRef } from "react";
 import { NavLink } from "react-router-dom";
 import {
   WARMUP_QUESTIONS,
-  DUMMY_CONVERSATION,
   DUMMY_SPEAKING_RESULT,
   DUMMY_SESSION_SUMMARY,
   SCENARIOS,
@@ -218,17 +217,23 @@ function SpeakingStep({ onContinue }: { onContinue: () => void }) {
   const audioRecorder = useAudioRecorder();
 
   // turns as state so we can patch real transcript + word_feedback from API
-  const [turns, setTurns] = useState<ConversationTurn[]>(
-    DUMMY_CONVERSATION.slice(0, 4),
-  );
+  const [turns, setTurns] = useState<ConversationTurn[]>([
+    {
+      id: "practice-turn-1-ai",
+      role: "ai",
+      text: scenario.initialPrompt ?? "Tell me about your recent work.",
+      hint: scenario.initialHint,
+    },
+  ]);
   const [turnIndex, setTurnIndex] = useState(0);
   const [isRecording, setIsRecording] = useState(false);
 
-  const visibleTurns = turns.slice(0, turnIndex + 1);
+  const visibleTurns = turns;
   const lastTurn = visibleTurns[visibleTurns.length - 1];
   const isAiTurn = lastTurn?.role === "ai";
-  const isDone = turnIndex >= turns.length - 1;
-  const progress = Math.round(((turnIndex + 1) / turns.length) * 100);
+  const userTurns = turns.filter((turn) => turn.role === "user");
+  const isDone = userTurns.length >= 2 && isAiTurn;
+  const progress = Math.round((userTurns.length / 2) * 100);
 
   async function handleRecord() {
     if (!isRecording) {
@@ -249,27 +254,19 @@ function SpeakingStep({ onContinue }: { onContinue: () => void }) {
       );
       const data = await res.json();
 
-      // turnIndex     = current AI turn (visible, just spoken to)
-      // turnIndex + 1 = user turn       → patch with real transcript + word_feedback
-      // turnIndex + 2 = next AI turn    → patch with real ai_reply_text
-      setTurns((prev) =>
-        prev.map((t, i) => {
-          if (i === turnIndex + 1) {
-            return {
-              ...t,
-              text: data.transcript,
-              wordFeedback: data.word_feedback,
-            };
-          }
-          if (i === turnIndex + 2 && data.ai_reply_text) {
-            return { ...t, text: data.ai_reply_text };
-          }
-          return t;
-        }),
-      );
-
-      // Advance by 2 → lands back on an AI turn so record button shows again
-      setTurnIndex((prev) => Math.min(prev + 2, turns.length - 1));
+      const userTurn: ConversationTurn = {
+        id: `practice-turn-${userTurns.length + 1}-user`,
+        role: "user",
+        text: data.transcript,
+        wordFeedback: data.word_feedback,
+      };
+      const aiTurn: ConversationTurn = {
+        id: `practice-turn-${userTurns.length + 2}-ai`,
+        role: "ai",
+        text: data.ai_reply_text ?? "Thanks for sharing. Tell me more.",
+      };
+      setTurns((prev) => [...prev, userTurn, aiTurn]);
+      setTurnIndex((prev) => prev + 2);
 
       // Speak AI reply via browser Web Speech API — free, no API key
       if (data.ai_reply_text) {

@@ -1,12 +1,15 @@
 // src/pages/SpeakingPage.tsx
 
 import { useState, useRef } from "react";
-import { SCENARIOS, DUMMY_CONVERSATION } from "../lib/dummy-data";
+import { SCENARIOS } from "../lib/dummy-data";
 import type {
   Scenario,
   ConversationTurn,
   SpeakingResult,
+  CorrectionRow,
+  Level,
 } from "../lib/types";
+import { formatLevel } from "../lib/types";
 import Badge from "../components/ui/Badge";
 import Button from "../components/ui/Button";
 import ProgressBar from "../components/ui/ProgressBar";
@@ -114,61 +117,226 @@ function buildSuggestedResponse(
     .join(" ");
 }
 
+function buildScenarioInitialTurns(scenario: Scenario): ConversationTurn[] {
+  return [
+    {
+      id: "turn-1-ai",
+      role: "ai",
+      text:
+        scenario.initialPrompt ||
+        `Welcome to this ${scenario.title} simulation. To start, could you introduce the situation and share your initial perspective?`,
+      hint:
+        scenario.initialHint ||
+        "Introduce yourself and state your thoughts clearly.",
+    },
+  ];
+}
+
 // ── Scenario picker ───────────────────────────────────────────────────────
 
-function ScenarioPicker({ onSelect }: { onSelect: (s: Scenario) => void }) {
+function ScenarioPicker({
+  customScenarios,
+  onAddCustomScenario,
+  onSelect,
+}: {
+  customScenarios: Scenario[];
+  onAddCustomScenario: (s: Scenario) => void;
+  onSelect: (s: Scenario) => void;
+}) {
+  const [customOpen, setCustomOpen] = useState(false);
+  const [customRole, setCustomRole] = useState("Backend engineer");
+  const [customContext, setCustomContext] = useState(
+    "You are joining a sprint planning conversation about designing an API, choosing a database, testing an endpoint, and responding to a production incident. Discuss trade-offs clearly with a senior teammate.",
+  );
+  const [customLevel, setCustomLevel] = useState<Level>("everyday");
+  const [customTurns, setCustomTurns] = useState(4);
+
+  function createCustomScenario(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const role = customRole.trim();
+    const context = customContext.trim();
+    if (!role || !context) return;
+
+    const newScenario: Scenario = {
+      id: `custom-${Date.now()}-${role.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
+      emoji: "🧩",
+      title: `${role} Simulation`,
+      description: context,
+      level: customLevel,
+      totalTurns: customTurns,
+      aiRole: `a senior colleague working with a ${role}`,
+      aiContext: context,
+      initialPrompt: `Hello! Thanks for joining today. Let's discuss ${role.toLowerCase()} priorities and ${context.slice(0, 90).toLowerCase()}... To kick things off, could you walk me through your perspective and how we should approach this?`,
+      initialHint: `Introduce your role and summarize your primary goals and considerations.`,
+    };
+
+    onAddCustomScenario(newScenario);
+    setCustomOpen(false);
+  }
+
+  const allScenarios = [...customScenarios, ...SCENARIOS];
+
   return (
     <div className="fl-container py-10 animate-slide-up">
-      <div className="mb-8">
-        <p className="text-xs font-semibold uppercase tracking-widest text-primary-light mb-1">
-          Speaking drill
-        </p>
-        <h1 className="font-display text-display-md font-bold text-text-primary">
-          Choose a scenario
-        </h1>
-        <p className="text-text-muted text-sm mt-2 max-w-md">
-          Pick a real-life situation. The AI plays the other person — you speak
-          naturally and get word-level feedback after each turn.
-        </p>
+      <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-widest text-primary-light mb-1">
+            Speaking drill
+          </p>
+          <h1 className="font-display text-display-md font-bold text-text-primary">
+            Choose a scenario
+          </h1>
+          <p className="text-text-muted text-sm mt-2 max-w-md">
+            Pick a real-life situation. The AI plays the other person — you speak
+            naturally and get word-level feedback after each turn.
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant={customOpen ? "secondary" : "primary"}
+          size="md"
+          onClick={() => setCustomOpen((open) => !open)}
+          className="self-start sm:self-auto shrink-0 shadow-sm"
+        >
+          {customOpen ? "✕ Close Form" : "+ Create Custom Scenario"}
+        </Button>
       </div>
 
-      <div className="flex flex-col gap-4">
-        {SCENARIOS.map((scenario) => (
-          <button
-            key={scenario.id}
-            onClick={() => onSelect(scenario)}
-            className="fl-card p-5 text-left flex items-start gap-5 hover:border-primary/40 hover:shadow-glow transition-all duration-200 group"
-          >
-            <span className="text-4xl mt-0.5">{scenario.emoji}</span>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 mb-1">
-                <span className="font-display font-semibold text-text-primary group-hover:text-primary transition-colors">
-                  {scenario.title}
-                </span>
-                <Badge variant="neutral">{scenario.level}</Badge>
-              </div>
-              <p className="text-sm text-text-muted leading-relaxed">
-                {scenario.description}
-              </p>
-              <p className="text-xs text-text-subtle mt-2">
-                {scenario.totalTurns} conversation turns
-              </p>
+      {customOpen && (
+        <form
+          onSubmit={createCustomScenario}
+          className="fl-card mb-6 border-primary/30 bg-primary/5 p-6 animate-slide-up shadow-card"
+        >
+          <div className="mb-4 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="text-2xl">✨</span>
+              <h2 className="font-display text-base font-bold text-text-primary">
+                Create Custom Speaking Scenario
+              </h2>
             </div>
-            <svg
-              className="w-5 h-5 text-text-subtle group-hover:text-primary transition-colors shrink-0 mt-1"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={2}
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M9 5l7 7-7 7"
+            <span className="text-xs text-text-muted">
+              Appears first in your scenario list
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+            <label className="block text-sm font-medium text-text-primary">
+              Your role
+              <input
+                value={customRole}
+                onChange={(event) => setCustomRole(event.target.value)}
+                className="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2 text-text-primary outline-none focus:border-primary transition-colors text-sm"
+                placeholder="e.g. Backend engineer"
+                required
               />
-            </svg>
-          </button>
-        ))}
+            </label>
+            <label className="block text-sm font-medium text-text-primary">
+              Level
+              <select
+                value={customLevel}
+                onChange={(e) => setCustomLevel(e.target.value as Level)}
+                className="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2 text-text-primary outline-none focus:border-primary transition-colors text-sm"
+              >
+                <option value="everyday">
+                  Everyday (Intermediate – Workplace & team collaboration)
+                </option>
+                <option value="foundation">
+                  Foundation (Beginner – Direct, structured fundamentals)
+                </option>
+                <option value="free">
+                  Advanced (Advanced – Complex discussions, trade-offs & nuances)
+                </option>
+              </select>
+            </label>
+          </div>
+
+          <label className="mb-3 block text-sm font-medium text-text-primary">
+            Situation & conversation context
+            <textarea
+              value={customContext}
+              onChange={(event) => setCustomContext(event.target.value)}
+              className="mt-1.5 w-full resize-y rounded-lg border border-border bg-background px-3 py-2.5 text-text-primary outline-none focus:border-primary transition-colors text-sm"
+              rows={3}
+              placeholder="Describe the conversation topic, role of the other person, and what you will discuss..."
+              required
+            />
+          </label>
+            <label className="block text-sm font-medium text-text-primary">
+              Number of turns
+              <input
+                type="number"
+                min={3}
+                max={6}
+                value={customTurns}
+                onChange={(event) => setCustomTurns(Number(event.target.value))}
+                className="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2 text-text-primary outline-none focus:border-primary transition-colors text-sm"
+                required
+              />
+            </label>
+
+          <div className="mb-5 rounded-lg border border-primary/20 bg-primary/5 p-3 text-xs leading-relaxed text-text-muted">
+            ⚡ Choose between 3 and 6 turns for this conversation.
+          </div>
+
+          <div className="flex items-center justify-end gap-3">
+            <Button
+              type="button"
+              variant="secondary"
+              size="md"
+              onClick={() => setCustomOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button type="submit" size="md">
+              Create and Add to List →
+            </Button>
+          </div>
+        </form>
+      )}
+
+      <div className="flex flex-col gap-4">
+        {allScenarios.map((scenario) => {
+          const isCustom = scenario.id.startsWith("custom-");
+          return (
+            <button
+              key={scenario.id}
+              onClick={() => onSelect(scenario)}
+              className={`fl-card p-5 text-left flex items-start gap-5 hover:border-primary/40 hover:shadow-glow transition-all duration-200 group ${
+                isCustom ? "border-primary/40 bg-primary/[0.03]" : ""
+              }`}
+            >
+              <span className="text-4xl mt-0.5">{scenario.emoji}</span>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-1 flex-wrap">
+                  <span className="font-display font-semibold text-text-primary group-hover:text-primary transition-colors">
+                    {scenario.title}
+                  </span>
+                  {isCustom && <Badge variant="primary">Custom</Badge>}
+                  <Badge variant="neutral">{formatLevel(scenario.level)}</Badge>
+                </div>
+                <p className="text-sm text-text-muted leading-relaxed">
+                  {scenario.description}
+                </p>
+                <p className="text-xs text-text-subtle mt-2">
+                  {scenario.totalTurns} conversation turns
+                </p>
+              </div>
+              <svg
+                className="w-5 h-5 text-text-subtle group-hover:text-primary transition-colors shrink-0 mt-1"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M9 5l7 7-7 7"
+                />
+              </svg>
+            </button>
+          );
+        })}
       </div>
     </div>
   );
@@ -176,81 +344,165 @@ function ScenarioPicker({ onSelect }: { onSelect: (s: Scenario) => void }) {
 
 // ── Active conversation ───────────────────────────────────────────────────
 
+interface StageFeedback {
+  stage: 1 | 2 | 3;
+  title: string;
+  message: string;
+  details?: CorrectionRow[];
+  modelAnswer?: string;
+}
+
 function ConversationView({
   scenario,
   turns,
-  currentTurnIndex,
   isRecording,
+  isProcessing,
   attemptCount,
-  correctedResponse,
-  correctedTurnId,
+  stageFeedback,
   error,
   onRecord,
   onFinish,
+  onBack,
+  sessionCorrections,
 }: {
   scenario: Scenario;
   turns: ConversationTurn[];
-  currentTurnIndex: number;
   isRecording: boolean;
+  isProcessing: boolean;
   attemptCount: number;
-  correctedResponse: string | null;
-  correctedTurnId: string | null;
+  stageFeedback: StageFeedback | null;
   error: string | null;
   onRecord: () => void;
   onFinish: (result: SpeakingResult) => void;
+  onBack: () => void;
+  sessionCorrections: CorrectionRow[];
 }) {
-  const progress = Math.round(
-    (currentTurnIndex / (scenario.totalTurns * 2)) * 100,
-  );
-  const visibleTurns = turns.slice(0, currentTurnIndex + 1);
-  const lastTurn = visibleTurns[visibleTurns.length - 1];
+  const userTurns = turns.filter((t) => t.role === "user");
+  const lastTurn = turns[turns.length - 1];
   const isAiTurn = lastTurn?.role === "ai";
-  const isRetryTurn = lastTurn?.role === "user";
-  const isDone = currentTurnIndex >= turns.length - 1;
+  const isRetryTurn = lastTurn?.role === "user" && attemptCount > 0;
+  // Scenario completes when required user turns are reached AND the final AI response has been delivered
+  const isDone = userTurns.length >= scenario.totalTurns && isAiTurn;
+
+  const currentTurnNumber = Math.min(
+    userTurns.length + (isAiTurn && !isDone ? 1 : 0),
+    scenario.totalTurns,
+  );
+  const currentTurnIndex = Math.min(turns.length - 1, scenario.totalTurns * 2);
+  const progress = Math.min(
+    100,
+    Math.round((currentTurnIndex / (scenario.totalTurns * 2)) * 100),
+  );
+  const lastAiTurn = [...turns]
+    .reverse()
+    .find((turn) => turn.role === "ai" && Boolean(turn.text?.trim()));
 
   // Build result from accumulated turn data when done
   function buildResult(): SpeakingResult {
-    const userTurns = turns.filter((t) => t.role === "user");
-    const allFeedback = userTurns.flatMap((t) => t.wordFeedback ?? []);
-    const errors = allFeedback.filter((w) => w.status === "error");
-    const cautions = allFeedback.filter((w) => w.status === "caution");
     const wordsSpoken = userTurns.reduce(
-      (acc, t) => acc + t.text.split(/\s+/).filter(Boolean).length,
+      (acc, t) => acc + t.text.trim().split(/\s+/).filter(Boolean).length,
       0,
     );
 
+    const grammarSet = new Set<string>();
+    const styleSet = new Set<string>();
+    for (const turn of userTurns) {
+      if (!turn.wordFeedback) continue;
+
+      for (const wf of turn.wordFeedback) {
+        const key = `${turn.id}:${wf.word}:${wf.status}`;
+        if (wf.status === "error") grammarSet.add(key);
+        else if (wf.status === "caution") styleSet.add(key);
+      }
+    }
+
+    const grammarCount = grammarSet.size;
+    const styleCount = styleSet.size;
+    const errorsFound = grammarCount + styleCount;
+    const toneScore =
+      errorsFound === 0 ? 5 : errorsFound <= 2 ? 4 : errorsFound <= 5 ? 3 : 2;
+
+    const topInsights: string[] = [];
+    if (errorsFound === 0) {
+      topInsights.push(
+        "Outstanding accuracy! Your spoken answers were grammatically sound and natural.",
+      );
+      topInsights.push(
+        "You maintained strong professional vocabulary throughout the simulation.",
+      );
+    } else {
+      if (grammarCount > 0) {
+        topInsights.push(
+          `Grammar focus: ${grammarCount} grammatical error${grammarCount > 1 ? "s" : ""} identified across your turns.`,
+        );
+      }
+      if (styleCount > 0) {
+        topInsights.push(
+          `Phrasing style: ${styleCount} style suggestion${styleCount > 1 ? "s" : ""} to sound more natural.`,
+        );
+      }
+      topInsights.push(
+        `Completed all ${userTurns.length} simulation turns with ${wordsSpoken} total words spoken.`,
+      );
+    }
+
+    const correctionsList: CorrectionRow[] =
+      sessionCorrections.length > 0
+        ? sessionCorrections
+        : userTurns.flatMap((t) =>
+            (t.wordFeedback ?? [])
+              .filter((wf) => wf.status !== "correct" && wf.suggestion)
+              .map((wf) => ({
+                original: wf.word,
+                better: wf.suggestion!,
+                why: wf.reason || "Improvement suggested for natural phrasing.",
+              })),
+          );
+
     return {
       scenarioId: scenario.id,
-      turnsCompleted: scenario.totalTurns,
+      turnsCompleted: userTurns.length,
       totalTurns: scenario.totalTurns,
       wordsSpoken,
-      errorsFound: errors.length + cautions.length,
-      errorBreakdown: { grammar: errors.length, style: cautions.length },
-      toneScore: 4, // TODO: replace with real API toneScore field
-      topInsights: [], // TODO: replace with real API topInsights field
-      corrections: [], // TODO: replace with real API corrections field
+      errorsFound,
+      errorBreakdown: { grammar: grammarCount, style: styleCount },
+      toneScore,
+      topInsights,
+      corrections: correctionsList,
     };
   }
 
   return (
     <div className="fl-container py-8 animate-fade-in">
+      {/* Top back & status bar */}
+      <div className="mb-4 flex items-center justify-between">
+        <button
+          type="button"
+          onClick={onBack}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-border/60 bg-surface/80 px-3 py-1.5 text-xs font-semibold text-text-muted transition-colors hover:border-primary/50 hover:text-text-primary shadow-xs"
+        >
+          <span className="text-sm">←</span>
+          <span>Exit scenario</span>
+        </button>
+        <Badge variant="primary" dot>
+          Live Simulation
+        </Badge>
+      </div>
+
       {/* Header row */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="mb-6 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <span className="text-2xl">{scenario.emoji}</span>
+          <span className="text-3xl">{scenario.emoji}</span>
           <div>
-            <h2 className="font-display font-semibold text-text-primary text-sm">
+            <h2 className="font-display font-semibold text-text-primary text-base">
               {scenario.title}
             </h2>
             <p className="text-xs text-text-subtle">
-              Turn {Math.ceil((currentTurnIndex + 1) / 2)} of{" "}
-              {scenario.totalTurns}
+              Turn {currentTurnNumber} of {scenario.totalTurns}
             </p>
           </div>
         </div>
-        <Badge variant="primary" dot>
-          Live
-        </Badge>
+        <Badge variant="neutral">{formatLevel(scenario.level)}</Badge>
       </div>
 
       <ProgressBar
@@ -260,13 +512,26 @@ function ConversationView({
         className="mb-8"
       />
 
+      {lastAiTurn && !isDone && (
+        <div className="fl-card mb-6 border border-primary/20 bg-primary/5 p-4 animate-slide-up">
+          <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-primary-light">
+            AI response
+          </p>
+          <p className="text-sm leading-relaxed text-text-primary">
+            {lastAiTurn.text}
+          </p>
+        </div>
+      )}
+
       {error && (
         <div
           className="fixed inset-x-4 top-20 z-50 mx-auto flex max-w-xl items-center gap-3 rounded-lg border border-error/40 bg-surface px-4 py-3 text-sm text-error shadow-card animate-slide-up"
           role="alert"
           aria-live="assertive"
         >
-          <span className="text-lg" aria-hidden="true">!</span>
+          <span className="text-lg" aria-hidden="true">
+            !
+          </span>
           <p className="flex-1">{error}</p>
           <Button variant="secondary" size="sm" onClick={onRecord}>
             Try again
@@ -274,9 +539,70 @@ function ConversationView({
         </div>
       )}
 
-      {/* Conversation thread */}
-      <div className="flex flex-col gap-4 mb-8">
-        {visibleTurns.map((turn) => (
+      {/* Staged Feedback Alert Banner */}
+      {stageFeedback && !isDone && (
+        <div
+          className={`fl-card mb-6 p-4 animate-slide-up border ${
+            stageFeedback.stage === 1
+              ? "border-caution/50 bg-caution/10"
+              : stageFeedback.stage === 2
+                ? "border-accent/50 bg-accent/10"
+                : "border-primary/50 bg-primary/10"
+          }`}
+        >
+          <div className="mb-1.5 flex items-center justify-between gap-2">
+            <span className="text-xs font-bold uppercase tracking-wider text-text-primary">
+              {stageFeedback.title}
+            </span>
+            <Badge
+              variant={stageFeedback.stage === 1 ? "caution" : "primary"}
+            >
+              {stageFeedback.stage === 3
+                ? "Model Answer"
+                : `Feedback ${stageFeedback.stage}`}
+            </Badge>
+          </div>
+          <p className="text-sm text-text-primary leading-relaxed">
+            {stageFeedback.message}
+          </p>
+
+          {stageFeedback.details && stageFeedback.details.length > 0 && (
+            <div className="mt-3 flex flex-col gap-2 border-t border-border/30 pt-3">
+              {stageFeedback.details.map((item, idx) => (
+                <div
+                  key={idx}
+                  className="rounded-lg bg-surface/80 p-2.5 text-xs shadow-xs"
+                >
+                  <div className="mb-1 flex flex-wrap items-center gap-2">
+                    <span className="font-semibold text-error">You said:</span>
+                    <span className="line-through text-text-muted">
+                      {item.original}
+                    </span>
+                    <span className="font-semibold text-correct">
+                      → Better:
+                    </span>
+                    <span className="font-bold text-correct">
+                      {item.better}
+                    </span>
+                  </div>
+                  <p className="text-text-muted">{item.why}</p>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {stageFeedback.modelAnswer && (
+            <div className="mt-2.5 rounded-lg border border-correct/40 bg-surface/80 p-2.5 text-xs text-correct">
+              <span className="font-semibold">Model answer: </span>“
+              {stageFeedback.modelAnswer}”
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Conversation thread — all turns including AI responses are rendered */}
+      <div className="mb-8 flex flex-col gap-4">
+        {turns.map((turn) => (
           <div
             key={turn.id}
             className={`flex gap-3 animate-slide-up ${
@@ -307,24 +633,11 @@ function ConversationView({
             `}
             >
               <TranscriptLine turn={turn} />
-              {turn.role === "user" && turn.wordFeedback && (
-                <>
-                  <FeedbackLegend />
-                  {turn.id === turns[currentTurnIndex]?.id && attemptCount > 0 && (
-                    <p className="mt-3 border-t border-border/40 pt-2 text-xs text-text-muted">
-                      {attemptCount === 1
-                        ? "Hint: review the yellow and red words, then try the sentence again."
-                        : `Hint: try saying “${buildSuggestedResponse(turn.wordFeedback)}”.`}
-                    </p>
-                  )}
-                  {turn.id === correctedTurnId && correctedResponse && (
-                    <p className="mt-3 border-t border-correct/30 pt-2 text-xs text-correct">
-                      Correct response: “{correctedResponse}”
-                    </p>
-                  )}
-                </>
+              {turn.role === "user" && turn.corrected && (
+                <Badge variant="primary">Corrected model answer</Badge>
               )}
-              {turn.role === "ai" && turn.hint && (
+              {turn.role === "user" && turn.wordFeedback && <FeedbackLegend />}
+              {turn.role === "ai" && turn.hint && !isDone && (
                 <p className="mt-2 pt-2 border-t border-border/40 text-xs text-text-subtle italic">
                   💡 {turn.hint}
                 </p>
@@ -337,11 +650,26 @@ function ConversationView({
       {/* Action area */}
       {!isDone ? (
         <div className="fl-card p-5 border-primary/20 bg-primary/5 text-center">
-          {isAiTurn || isRetryTurn ? (
+          {isProcessing ? (
+            <div className="flex flex-col items-center gap-2 py-4">
+              <p className="text-sm font-medium text-text-primary">
+                Analyzing your response & grammar…
+              </p>
+              <div className="flex gap-1.5 mt-1">
+                {[0, 1, 2].map((i) => (
+                  <span
+                    key={i}
+                    className="w-2.5 h-2.5 rounded-full bg-primary animate-pulse-slow"
+                    style={{ animationDelay: `${i * 0.2}s` }}
+                  />
+                ))}
+              </div>
+            </div>
+          ) : isAiTurn || isRetryTurn ? (
             <div className="flex flex-col items-center gap-3">
               <p className="text-sm text-text-muted">
                 {isRetryTurn
-                  ? `Some words need another try — attempt ${attemptCount + 1} of 3`
+                  ? `Feedback provided — try speaking again (attempt ${attemptCount + 1} of 3)`
                   : "Your turn — press to respond"}
               </p>
 
@@ -370,16 +698,16 @@ function ConversationView({
                 {isRecording
                   ? "Recording… tap to stop"
                   : isRetryTurn
-                    ? "Review the highlighted feedback, then try again"
-                    : "Tap to speak"}
+                    ? "Review the feedback above, then tap to retry"
+                    : "Tap to speak your response"}
               </p>
             </div>
           ) : (
-            <div className="flex flex-col items-center gap-2">
+            <div className="flex flex-col items-center gap-2 py-4">
               <p className="text-sm text-text-muted">
                 Waiting for AI response…
               </p>
-              <div className="flex gap-1">
+              <div className="flex gap-1.5">
                 {[0, 1, 2].map((i) => (
                   <span
                     key={i}
@@ -392,9 +720,12 @@ function ConversationView({
           )}
         </div>
       ) : (
-        <div className="text-center">
-          <p className="text-sm text-text-muted mb-4">
+        <div className="fl-card p-6 border-primary/30 bg-primary/5 text-center animate-slide-up shadow-card">
+          <p className="text-lg font-bold text-text-primary mb-1">
             🎉 Scenario complete — great effort!
+          </p>
+          <p className="text-xs text-text-muted mb-5">
+            You completed all {scenario.totalTurns} turns. Ready to see your performance breakdown?
           </p>
           <Button onClick={() => onFinish(buildResult())} size="lg">
             See my feedback →
@@ -612,31 +943,33 @@ type View = "picker" | "conversation" | "results";
 
 export default function SpeakingPage() {
   const [view, setView] = useState<View>("picker");
+  const [customScenarios, setCustomScenarios] = useState<Scenario[]>([]);
   const [scenario, setScenario] = useState<Scenario | null>(null);
   const [turns, setTurns] = useState<ConversationTurn[]>([]);
-  const [turnIndex, setTurnIndex] = useState(0);
   const [isRecording, setIsRecording] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
   const [attemptCount, setAttemptCount] = useState(0);
-  const [correctedResponse, setCorrectedResponse] = useState<string | null>(
-    null,
-  );
-  const [correctedTurnId, setCorrectedTurnId] = useState<string | null>(null);
+  const [stageFeedback, setStageFeedback] = useState<StageFeedback | null>(null);
+  const [sessionCorrections, setSessionCorrections] = useState<CorrectionRow[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [speakingResult, setSpeakingResult] = useState<SpeakingResult | null>(
-    null,
-  );
+  const [speakingResult, setSpeakingResult] = useState<SpeakingResult | null>(null);
 
   const audioRecorder = useAudioRecorder();
 
   function handleSelectScenario(s: Scenario) {
+    window.speechSynthesis.cancel();
     setError(null);
     setScenario(s);
-    setTurns(DUMMY_CONVERSATION); // TODO: fetch scenario turns from API if needed
-    setTurnIndex(0);
+    setTurns(buildScenarioInitialTurns(s));
     setAttemptCount(0);
-    setCorrectedResponse(null);
-    setCorrectedTurnId(null);
+    setStageFeedback(null);
+    setSessionCorrections([]);
     setView("conversation");
+  }
+
+  function handleBack() {
+    window.speechSynthesis.cancel();
+    setView("picker");
   }
 
   async function handleRecord() {
@@ -650,14 +983,19 @@ export default function SpeakingPage() {
       }
     } else {
       setIsRecording(false);
+      setIsProcessing(true);
       try {
         const blob = await audioRecorder.stop();
-        const responseTurnIndex =
-          turns[turnIndex]?.role === "user" ? turnIndex - 1 : turnIndex;
+        const userTurnsCount = turns.filter((t) => t.role === "user").length;
+        const currentTurnNumber = userTurnsCount + (attemptCount > 0 ? 0 : 1);
         const form = new FormData();
         form.append("audio", blob, "turn.webm");
         form.append("scenarioId", scenario!.id);
-        form.append("turnIndex", String(responseTurnIndex));
+        form.append("turnIndex", String(currentTurnNumber - 1));
+        if (scenario!.aiRole) form.append("scenarioRole", scenario!.aiRole);
+        if (scenario!.aiContext) {
+          form.append("scenarioContext", scenario!.aiContext);
+        }
 
         const res = await fetch(
           `${import.meta.env.VITE_API_URL}/api/speech/transcribe`,
@@ -676,50 +1014,219 @@ export default function SpeakingPage() {
           feedback.every(
             (word: { status: string }) => word.status === "correct",
           );
-        const nextAttempt = attemptCount + 1;
 
-        setTurns((prev) =>
-          prev.map((t, i) => {
-            if (i === responseTurnIndex + 1) {
-              return {
-                ...t,
-                text: data.transcript,
-                wordFeedback: data.word_feedback,
-              };
+        // Collect corrections from response
+        const extractedCorrections: CorrectionRow[] = [];
+        if (Array.isArray(data.corrections)) {
+          for (const c of data.corrections) {
+            if (c.original && c.better) {
+              extractedCorrections.push({
+                original: c.original,
+                better: c.better,
+                why: c.why || "Suggested for natural phrasing.",
+              });
             }
-            if (i === responseTurnIndex + 2 && data.ai_reply_text) {
-              return { ...t, text: data.ai_reply_text };
+          }
+        }
+        if (extractedCorrections.length === 0) {
+          for (const wf of feedback) {
+            if (wf.status !== "correct" && wf.suggestion) {
+              extractedCorrections.push({
+                original: wf.word,
+                better: wf.suggestion,
+                why: wf.reason || "Improvement suggested.",
+              });
             }
-            return t;
-          }),
-        );
-
-        if (!isAllGreen && nextAttempt < 3) {
-          setAttemptCount(nextAttempt);
-          setTurnIndex(responseTurnIndex + 1);
-          return;
+          }
         }
 
-        if (!isAllGreen) {
-          setCorrectedResponse(buildSuggestedResponse(feedback));
-          setCorrectedTurnId(turns[responseTurnIndex + 1]?.id ?? null);
-        } else {
-          setCorrectedResponse(null);
-          setCorrectedTurnId(null);
-        }
-        setAttemptCount(0);
-        setTurnIndex(Math.min(responseTurnIndex + 2, turns.length - 1));
+        const suggestedModel =
+          buildSuggestedResponse(feedback) || data.transcript || "I understand. Let's continue.";
+        const userTurnId = `turn-${currentTurnNumber}-user`;
+        const generalFeedback =
+          typeof data.general_feedback === "string" && data.general_feedback.trim()
+            ? data.general_feedback.trim()
+            : "There is a grammar or naturalness issue in your response. Review the highlighted words and try again.";
+        const specificFeedback =
+          Array.isArray(data.specific_feedback) && data.specific_feedback.length > 0
+            ? data.specific_feedback
+            : extractedCorrections;
+        const modelAnswer =
+          typeof data.model_answer === "string" && data.model_answer.trim()
+            ? data.model_answer.trim()
+            : suggestedModel;
 
-        if (data.ai_reply_text) {
+        if (isAllGreen) {
+          // Passed! "All green" condition met
+          const userTurn: ConversationTurn = {
+            id: userTurnId,
+            role: "user",
+            text: data.transcript,
+            wordFeedback: feedback,
+          };
+
+          let nextTurns: ConversationTurn[];
+          if (attemptCount > 0) {
+            nextTurns = turns.map((t) => (t.id === userTurnId ? userTurn : t));
+          } else {
+            nextTurns = [...turns, userTurn];
+          }
+
+          if (extractedCorrections.length > 0) {
+            setSessionCorrections((prev) => [...prev, ...extractedCorrections]);
+          }
+
+          const aiReplyText =
+            (data.ai_reply_text || "Understood. Thank you for your response.").trim();
+          const isFinal = currentTurnNumber >= scenario!.totalTurns;
+          const nextAiTurn: ConversationTurn = {
+            id: `turn-${currentTurnNumber + 1}-ai`,
+            role: "ai",
+            text: aiReplyText,
+            hint: isFinal
+              ? "Simulation complete. Review your feedback below."
+              : "Respond naturally to continue the conversation.",
+          };
+          nextTurns.push(nextAiTurn);
+
+          setTurns(nextTurns);
+          setAttemptCount(0);
+          setStageFeedback(null);
+
+          // Audio speech synthesis
           window.speechSynthesis.cancel();
-          const utt = new SpeechSynthesisUtterance(data.ai_reply_text);
+          const utt = new SpeechSynthesisUtterance(aiReplyText);
           utt.lang = "en-GB";
           utt.rate = 0.9;
           window.speechSynthesis.speak(utt);
+        } else {
+          // Not all green
+          const nextAttempt = attemptCount + 1;
+
+          if (extractedCorrections.length > 0) {
+            setSessionCorrections((prev) => {
+              const merged = [...prev];
+              for (const c of extractedCorrections) {
+                if (
+                  !merged.some(
+                    (m) =>
+                      m.original.toLowerCase() === c.original.toLowerCase() &&
+                      m.better.toLowerCase() === c.better.toLowerCase(),
+                  )
+                ) {
+                  merged.push(c);
+                }
+              }
+              return merged;
+            });
+          }
+
+          if (nextAttempt === 1) {
+            // Feedback 1: General feedback
+            const userTurn: ConversationTurn = {
+              id: userTurnId,
+              role: "user",
+              text: data.transcript,
+              wordFeedback: feedback,
+            };
+            setTurns((prev) =>
+              attemptCount > 0
+                ? prev.map((t) => (t.id === userTurnId ? userTurn : t))
+                : [...prev, userTurn],
+            );
+            setAttemptCount(1);
+            setStageFeedback({
+              stage: 1,
+              title: "Attempt 1 of 3 · General Feedback",
+              message: generalFeedback,
+            });
+          } else if (nextAttempt === 2) {
+            // Feedback 2: Specific feedback
+            const userTurn: ConversationTurn = {
+              id: userTurnId,
+              role: "user",
+              text: data.transcript,
+              wordFeedback: feedback,
+            };
+            setTurns((prev) =>
+              prev.map((t) => (t.id === userTurnId ? userTurn : t)),
+            );
+            setAttemptCount(2);
+            setStageFeedback({
+              stage: 2,
+              title: "Attempt 2 of 3 · Specific Feedback",
+              message:
+                typeof data.specific_feedback === "string" && data.specific_feedback.trim()
+                  ? data.specific_feedback.trim()
+                  : "Here is an explanation of the issue and how to improve it:",
+              details:
+                specificFeedback.length > 0
+                  ? specificFeedback
+                  : [
+                      {
+                        original: "Highlighted words",
+                        better: suggestedModel,
+                        why: "Grammar or vocabulary correction needed.",
+                      },
+                    ],
+            });
+          } else {
+            // Next attempt >= 3: 3 failed attempts reached!
+            // Move to correct answer so user does not get stuck
+            const correctedTurn: ConversationTurn = {
+              id: userTurnId,
+              role: "user",
+              text: suggestedModel,
+              corrected: true,
+              wordFeedback: suggestedModel
+                .split(/\s+/)
+                .map((w: string) => ({ word: w, status: "correct" as const })),
+            };
+
+            let nextTurns = turns.map((t) =>
+              t.id === userTurnId ? correctedTurn : t,
+            );
+            if (!nextTurns.some((t) => t.id === userTurnId)) {
+              nextTurns = [...turns, correctedTurn];
+            }
+
+            const aiReplyText =
+              (data.ai_reply_text || modelAnswer || "Understood. Let's move forward.").trim();
+            const isFinal = currentTurnNumber >= scenario!.totalTurns;
+            const nextAiTurn: ConversationTurn = {
+              id: `turn-${currentTurnNumber + 1}-ai`,
+              role: "ai",
+              text: aiReplyText,
+              hint: isFinal
+                ? "Simulation complete. Review your feedback below."
+                : "Respond naturally to continue the conversation.",
+            };
+            nextTurns.push(nextAiTurn);
+
+            setTurns(nextTurns);
+            setAttemptCount(0);
+            setStageFeedback({
+              stage: 3,
+              title: "Model Answer Applied",
+              message:
+                typeof data.model_answer === "string" && data.model_answer.trim()
+                  ? `Attempt limit reached: ${data.model_answer.trim()}`
+                  : "Attempt limit reached: we've replaced your answer with the model response so you can continue the conversation without getting stuck.",
+              modelAnswer: modelAnswer,
+            });
+
+            window.speechSynthesis.cancel();
+            const utt = new SpeechSynthesisUtterance(aiReplyText);
+            utt.lang = "en-GB";
+            utt.rate = 0.9;
+            window.speechSynthesis.speak(utt);
+          }
         }
       } catch (requestError) {
         console.error("Speaking transcription failed:", requestError);
         setError("We couldn't process your recording. Please try again.");
+      } finally {
+        setIsProcessing(false);
       }
     }
   }
@@ -730,20 +1237,29 @@ export default function SpeakingPage() {
   }
 
   function handleRestart() {
+    window.speechSynthesis.cancel();
     setScenario(null);
     setTurns([]);
-    setTurnIndex(0);
     setIsRecording(false);
+    setIsProcessing(false);
     setAttemptCount(0);
-    setCorrectedResponse(null);
-    setCorrectedTurnId(null);
+    setStageFeedback(null);
+    setSessionCorrections([]);
     setError(null);
     setSpeakingResult(null);
     setView("picker");
   }
 
   if (view === "picker") {
-    return <ScenarioPicker onSelect={handleSelectScenario} />;
+    return (
+      <ScenarioPicker
+        customScenarios={customScenarios}
+        onAddCustomScenario={(newScenario) => {
+          setCustomScenarios((prev) => [newScenario, ...prev]);
+        }}
+        onSelect={handleSelectScenario}
+      />
+    );
   }
 
   if (view === "conversation" && scenario) {
@@ -751,14 +1267,15 @@ export default function SpeakingPage() {
       <ConversationView
         scenario={scenario}
         turns={turns}
-        currentTurnIndex={turnIndex}
         isRecording={isRecording}
+        isProcessing={isProcessing}
         attemptCount={attemptCount}
-        correctedResponse={correctedResponse}
-        correctedTurnId={correctedTurnId}
+        stageFeedback={stageFeedback}
         error={error}
         onRecord={handleRecord}
         onFinish={handleFinish}
+        onBack={handleBack}
+        sessionCorrections={sessionCorrections}
       />
     );
   }
