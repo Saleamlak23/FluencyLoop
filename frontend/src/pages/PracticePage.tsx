@@ -14,6 +14,11 @@ import type {
   WritingFeedback,
   ConversationTurn,
 } from "../lib/types";
+import {
+  getProgress,
+  recordSession,
+  subscribeToProgress,
+} from "../lib/progressStorage";
 import Badge from "../components/ui/Badge";
 import Button from "../components/ui/Button";
 import ProgressBar from "../components/ui/ProgressBar";
@@ -777,23 +782,10 @@ export default function PracticePage() {
   const [writingFeedback, setWritingFeedback] =
     useState<WritingFeedback | null>(null);
   const [speakingResult] = useState<SpeakingResult | null>(null);
-  const [progress, setProgress] = useState({ streak: 0, sessionsCompleted: 0 });
+  const [progress, setProgress] = useState(() => getProgress());
 
   useEffect(() => {
-    const apiUrl = import.meta.env.VITE_API_URL;
-    if (!apiUrl) return;
-
-    fetch(`${apiUrl}/api/user/progress`)
-      .then((response) => (response.ok ? response.json() : null))
-      .then((data) => {
-        if (data) {
-          setProgress({
-            streak: Number(data.streak) || 0,
-            sessionsCompleted: Number(data.sessions_completed) || 0,
-          });
-        }
-      })
-      .catch(() => undefined);
+    return subscribeToProgress(() => setProgress(getProgress()));
   }, []);
 
   const [question] = useState<WarmUpQuestion>(
@@ -822,10 +814,8 @@ export default function PracticePage() {
       {step === "writing" && (
         <WritingStep
           onContinue={(result) => {
-            {
-              /* ← captures real result */
-            }
             setWritingFeedback(result);
+            setProgress(recordSession());
             setStep("summary");
           }}
         />
