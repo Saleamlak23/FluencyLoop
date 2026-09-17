@@ -242,15 +242,25 @@ PUBLIC_WORD_CANDIDATES = (
     "initiative",
 )
 
+_word_cache_date: str | None = None
+_word_cache: dict | None = None
+_word_failure_logged_date: str | None = None
+
 
 async def _get_live_word() -> dict:
     """Build today's lesson from the public Dictionary API."""
+    global _word_cache_date, _word_cache, _word_failure_logged_date
+
+    today = date.today().isoformat()
+    if _word_cache_date == today and _word_cache is not None:
+        return _word_cache
+
     start = date(2024, 1, 1)
     days_since = (date.today() - start).days
     word = PUBLIC_WORD_CANDIDATES[days_since % len(PUBLIC_WORD_CANDIDATES)]
 
     try:
-        async with httpx.AsyncClient(timeout=8.0) as client:
+        async with httpx.AsyncClient(timeout=2.5) as client:
             response = await client.get(
                 f"https://api.dictionaryapi.dev/api/v2/entries/en/{word}"
             )
@@ -259,11 +269,15 @@ async def _get_live_word() -> dict:
     except (httpx.HTTPError, IndexError, KeyError, TypeError, ValueError) as error:
         # Keep the feature available during a public API outage. The live API
         # remains the primary source; this is only the deterministic fallback.
-        print(
-            f"[vocabulary] public dictionary lookup failed: "
-            f"{type(error).__name__}: {error!r}"
-        )
-        return _get_todays_word()
+        if _word_failure_logged_date != today:
+            print(
+                f"[vocabulary] public dictionary lookup failed: "
+                f"{type(error).__name__}: {error!r}; using local fallback"
+            )
+            _word_failure_logged_date = today
+        _word_cache_date = today
+        _word_cache = _get_todays_word()
+        return _word_cache
 
     phonetic = next(
         (
@@ -296,7 +310,8 @@ async def _get_live_word() -> dict:
             }
         )
 
-    return {
+    _word_cache_date = today
+    _word_cache = {
         "id": word,
         "word": entry.get("word", word).title(),
         "phonetic": phonetic,
@@ -310,6 +325,7 @@ async def _get_live_word() -> dict:
             "exampleAnswer": f"I used the word {word} naturally in a sentence today.",
         },
     }
+    return _word_cache
 
 
 # ── Endpoints ────────────────────────────────────────────────────────────────
