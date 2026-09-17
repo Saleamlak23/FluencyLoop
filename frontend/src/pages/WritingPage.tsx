@@ -37,13 +37,17 @@ function normalizeWritingFeedback(data: unknown, submittedText: string): Writing
   const response = data as Record<string, unknown>;
   const rewrittenText = response.rewritten_text ?? response.rewrittenText;
   const overallScore = response.overall_score ?? response.overallScore;
+  const contextScore = response.context_score ?? response.contextScore;
+  const contextFeedback = response.context_feedback ?? response.contextFeedback;
   const topInsights = response.top_insights ?? response.topInsights;
   const originalText = response.original_text ?? response.originalText ?? submittedText;
 
   if (
     typeof originalText !== "string" ||
     typeof rewrittenText !== "string" ||
-    typeof overallScore !== "number"
+    typeof overallScore !== "number" ||
+    typeof contextScore !== "number" ||
+    typeof contextFeedback !== "string"
   ) {
     throw new Error("The writing service returned incomplete feedback.");
   }
@@ -70,6 +74,8 @@ function normalizeWritingFeedback(data: unknown, submittedText: string): Writing
     rewrittenText,
     errors: normalizedErrors,
     overallScore: Math.max(1, Math.min(5, Math.round(overallScore))),
+    contextScore: Math.max(1, Math.min(5, Math.round(contextScore))),
+    contextFeedback,
     topInsights: Array.isArray(topInsights)
       ? topInsights.filter((insight): insight is string => typeof insight === "string")
       : [],
@@ -411,6 +417,20 @@ function FeedbackPanel({
         ))}
       </div>
 
+      <div className="fl-card p-5 mb-4 border-primary/20 bg-primary/5">
+        <div className="flex items-center justify-between gap-3 mb-2">
+          <p className="text-xs font-semibold uppercase tracking-widest text-primary-light">
+            Prompt relevance
+          </p>
+          <span className={`font-display font-bold ${scoreColor(feedback.contextScore)}`}>
+            {feedback.contextScore}/5
+          </span>
+        </div>
+        <p className="text-sm text-text-muted leading-relaxed">
+          {feedback.contextFeedback}
+        </p>
+      </div>
+
       {/* Text panel */}
       <div className="fl-card p-6 mb-4 min-h-[160px]">
         {tab === "original" ? (
@@ -563,7 +583,11 @@ export default function WritingPage() {
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ promptId: prompt!.id, text }),
+          body: JSON.stringify({
+            promptId: prompt!.id,
+            promptInstruction: prompt!.instruction,
+            text,
+          }),
         },
       );
       const data = await res.json().catch(() => null);

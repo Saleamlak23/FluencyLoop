@@ -94,6 +94,7 @@ class WritingRequest(BaseModel):
       })
     """
     promptId: str   # was: prompt_id — caused 422 because frontend sends camelCase
+    promptInstruction: str
     text:     str
 
 
@@ -101,6 +102,8 @@ class WritingResponse(BaseModel):
     errors:         list[InlineError]
     rewritten_text: str
     overall_score:  int
+    context_score:  int
+    context_feedback: str
     top_insights:   list[str]
 
 

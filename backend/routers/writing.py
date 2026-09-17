@@ -30,10 +30,12 @@ Do not add any markdown, preamble, or explanation outside the JSON object:
   ],
   "rewritten_text": "<a fully rewritten, natural version of the student's text>",
   "overall_score": <integer 1-5>,
+    "context_score": <integer 1-5, based on how well the response answers the prompt>,
+    "context_feedback": "<brief explanation of whether the response fulfills the prompt and what is missing, if anything>",
   "top_insights": ["<insight 1>", "<insight 2>", "<insight 3>"]
 }
 
-Be thorough but kind. If the text has no errors, say so warmly in top_insights and give a score of 5."""
+Be thorough but kind. Judge both language quality and task completion. A grammatically perfect answer that ignores the prompt must receive a low context_score and clear guidance. If the text has no errors, say so warmly in top_insights and give a score of 5."""
 
 
 # ── Helper ───────────────────────────────────────────────────────────────────
@@ -52,6 +54,14 @@ def _validate_scores(data: dict) -> dict:
     """Clamp overall_score to 1–5 in case the model drifts out of range."""
     score = data.get("overall_score", 3)
     data["overall_score"] = max(1, min(5, int(score)))
+    context_score = data.get("context_score", 3)
+    try:
+        context_score = int(context_score)
+    except (TypeError, ValueError):
+        context_score = 3
+    data["context_score"] = max(1, min(5, context_score))
+    if not isinstance(data.get("context_feedback"), str):
+        data["context_feedback"] = "Check that your response directly addresses every part of the prompt."
     return data
 
 
@@ -83,7 +93,13 @@ async def evaluate_writing(
 
     messages = [
         {"role": "system", "content": WRITING_SYSTEM_PROMPT},
-        {"role": "user",   "content": f"Please evaluate this text:\n\n{payload.text}"},
+        {
+            "role": "user",
+            "content": (
+                f"Task prompt:\n{payload.promptInstruction}\n\n"
+                f"Student response:\n{payload.text}"
+            ),
+        },
     ]
 
     # ── Primary: Groq Llama 3.3 70B ─────────────────────────────────────────
@@ -111,7 +127,8 @@ async def evaluate_writing(
         gemini = get_gemini_model()
         full_prompt = (
             WRITING_SYSTEM_PROMPT
-            + f"\n\nPlease evaluate this text:\n\n{payload.text}"
+            + f"\n\nTask prompt:\n{payload.promptInstruction}\n\n"
+            + f"Student response:\n{payload.text}"
         )
         result = gemini.generate_content(full_prompt)
         data = _parse_response(result.text)

@@ -307,6 +307,8 @@ export const DUMMY_WRITING_FEEDBACK: WritingFeedback = {
     },
   ],
   overallScore: 3,
+  contextScore: 5,
+  contextFeedback: "The response directly addresses the writing prompt.",
   topInsights: [
     'Remember irregular past tenses: go → went, buy → bought, eat → ate.',
     '"A lot of" is more natural than "many" in informal writing.',

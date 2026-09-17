@@ -450,13 +450,17 @@ function WritingStep({
 
   async function handleSubmit() {
     setLoading(true);
-    // API: POST /api/writing/evaluate — body: { promptId, text }
+    // API: POST /api/writing/evaluate — body: { promptId, promptInstruction, text }
     const res = await fetch(
       `${import.meta.env.VITE_API_URL}/api/writing/evaluate`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ promptId: prompt.id, text }),
+        body: JSON.stringify({
+          promptId: prompt.id,
+          promptInstruction: prompt.instruction,
+          text,
+        }),
       },
     );
     const data: WritingFeedback = await res.json();
